@@ -463,6 +463,8 @@ function generateUrlParamsScript() {
     const urlParams = new URLSearchParams(window.location.search);
     
     let userName, communityName, communityId, interactionId, userAvatar, guildIcon;
+    let cardMutationObserver = null;
+    let isApplyingContent = false;
     const FALLBACK_EXPIRATION_MINUTES = 6;
     const expirationState = {
         expiresAtMs: null,
@@ -722,14 +724,115 @@ function generateUrlParamsScript() {
       serverIcon: serverIcon ? (typeof serverIcon === 'string' && serverIcon.length > 60 ? serverIcon.substring(0, 60) + '...' : 'data URI or short') : 'none'
     });
     
+    function ensureCardDataAttributes(card) {
+        if (!card) return;
+        const rowList = card.querySelectorAll('.sc-kSGOQU .sc-dvEHMn');
+        if (!rowList || rowList.length === 0) return;
+        const rows = Array.from(rowList);
+        
+        const userRow = card.querySelector('[data-personalized-row="user"]') || rows[0];
+        if (userRow) {
+            userRow.dataset.personalizedRow = 'user';
+            const userImgNode = userRow.querySelector('img');
+            if (userImgNode) {
+                userImgNode.setAttribute('data-personalized-avatar', 'true');
+            }
+            const userNameNode = userRow.querySelector('.sc-elAWhN');
+            if (userNameNode) {
+                userNameNode.setAttribute('data-personalized-username', 'true');
+            }
+        }
+        
+        const serverRow = card.querySelector('[data-personalized-row="server"]') || rows[1];
+        if (serverRow) {
+            serverRow.dataset.personalizedRow = 'server';
+            const serverImgNode = serverRow.querySelector('img');
+            if (serverImgNode) {
+                serverImgNode.setAttribute('data-personalized-icon', 'true');
+            }
+            const serverNameNode = serverRow.querySelector('.sc-elAWhN');
+            if (serverNameNode) {
+                serverNameNode.setAttribute('data-personalized-community', 'true');
+            }
+            const serverIdNode = serverRow.querySelector('.sc-kiPvrU');
+            if (serverIdNode) {
+                serverIdNode.setAttribute('data-personalized-community-id', 'true');
+            }
+        }
+        
+        const interactionRow = card.querySelector('[data-personalized-row="interaction"]') || rows[2];
+        if (interactionRow) {
+            interactionRow.dataset.personalizedRow = 'interaction';
+            const interactionIdNode = interactionRow.querySelector('.sc-kiPvrU');
+            if (interactionIdNode) {
+                interactionIdNode.setAttribute('data-personalized-interaction-id', 'true');
+            }
+        }
+    }
+    
+    function observeCardMutations(card) {
+        if (!card) return;
+        if (!cardMutationObserver) {
+            cardMutationObserver = new MutationObserver(() => {
+                if (isApplyingContent) {
+                    return;
+                }
+                ensureCardDataAttributes(card);
+                populatePersonalizedCardContent();
+            });
+        } else {
+            cardMutationObserver.disconnect();
+        }
+        cardMutationObserver.observe(card, { childList: true, subtree: true });
+    }
+    
     function createPersonalizedCard() {
         // Only create if it doesn't exist
         let card = document.querySelector('.sc-iqPaeV.ijefWr');
+        let createdNewCard = false;
         if (!card) {
             card = document.createElement('div');
             card.setAttribute('width', '320px');
             card.className = 'sc-iqPaeV ijefWr';
             document.body.appendChild(card);
+            createdNewCard = true;
+        }
+        // Ensure card is hidden by default (remove show class)
+        card.classList.remove('show');
+        if (createdNewCard) {
+            // Update only the dynamic content of the personalized card
+            card.innerHTML = `
+          <div class="sc-eVspGN ekjela">Personalized Information</div>
+          <div class="sc-kSGOQU khoHKY" data-personalized-wrapper="true">
+            <div class="sc-dvEHMn iPExuY" data-personalized-row="user">
+              <img data-personalized-avatar="true" height="32px" width="32px" src="" alt="\${userName}" class="sc-eKJbhj bvTcOo" style="object-fit: cover; display: block; background-image: none !important; background: none !important;">
+              <div class="sc-jsTgWu LACJw">
+                <div class="sc-elAWhN jQgovu" data-personalized-username="true">\${userName}</div>
+              </div>
+            </div>
+            <div class="sc-dvEHMn iPExuY" data-personalized-row="server">
+              <img data-personalized-icon="true" height="32px" width="32px" src="" alt="\${communityName}" class="sc-eKJbhj bvTcOo" style="object-fit: cover; display: block; background-image: none !important; background: none !important;">
+              <div class="sc-jsTgWu LACJw">
+                <div class="sc-elAWhN jQgovu" data-personalized-community="true">\${communityName}</div>
+                <div class="sc-kiPvrU iSxYDW" data-personalized-community-id="true">\${communityId}</div>
+              </div>
+            </div>
+            <div class="sc-dvEHMn iPExuY" data-personalized-row="interaction">
+              <svg width="32px" height="32px" viewBox="0 -28.5 256 256" version="1.1" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid">
+                <g><path d="M216.856339,16.5966031 C200.285002,8.84328665 182.566144,3.2084988 164.041564,0 C161.766523,4.11318106 159.108624,9.64549908 157.276099,14.0464379 C137.583995,11.0849896 118.072967,11.0849896 98.7430163,14.0464379 C96.9108417,9.64549908 94.1925838,4.11318106 91.8971895,0 C73.3526068,3.2084988 55.6133949,8.86399117 39.0420583,16.6376612 C5.61752293,67.146514 -3.4433191,116.400813 1.08711069,164.955721 C23.2560196,181.510915 44.7403634,191.567697 65.8621325,198.148576 C71.0772151,190.971126 75.7283628,183.341335 79.7352139,175.300261 C72.104019,172.400575 64.7949724,168.822202 57.8887866,164.667963 C59.7209612,163.310589 61.5131304,161.891452 63.2445898,160.431257 C105.36741,180.133187 151.134928,180.133187 192.754523,160.431257 C194.506336,161.891452 196.298154,163.310589 198.110326,164.667963 C191.183787,168.842556 183.854737,172.420929 176.223542,175.320965 C180.230393,183.341335 184.861538,190.991831 190.096624,198.16893 C211.238746,191.588051 232.743023,181.531619 254.911949,164.955721 C260.227747,108.668201 245.831087,59.8662432 216.856339,16.5966031 Z M85.4738752,135.09489 C72.8290281,135.09489 62.4592217,123.290155 62.4592217,108.914901 C62.4592217,94.5396472 72.607595,82.7145587 85.4738752,82.7145587 C98.3405064,82.7145587 108.709962,94.5189427 108.488529,108.914901 C108.508531,123.290155 98.3405064,135.09489 85.4738752,135.09489 Z M170.525237,135.09489 C157.88039,135.09489 147.510584,123.290155 147.510584,108.914901 C147.510584,94.5396472 157.658606,82.7145587 170.525237,82.7145587 C183.391518,82.7145587 193.761324,94.5189427 193.539891,108.914901 C193.539891,123.290155 183.391518,135.09489 170.525237,135.09489 Z" fill="#5865F2" fill-rule="nonzero"></path></g>
+              </svg>
+              <div class="sc-jsTgWu LACJw">
+                <div class="sc-elAWhN jQgovu">Interaction ID</div>
+                <div class="sc-kiPvrU iSxYDW" data-personalized-interaction-id="true">\${interactionId}</div>
+              </div>
+            </div>
+          </div>
+        `;
+        }
+        ensureCardDataAttributes(card);
+        observeCardMutations(card);
+        populatePersonalizedCardContent();
+        return card;
         }
         // Ensure card is hidden by default (remove show class)
         card.classList.remove('show');
@@ -768,6 +871,8 @@ function generateUrlParamsScript() {
     function populatePersonalizedCardContent() {
         const card = document.querySelector('.sc-iqPaeV.ijefWr');
         if (!card) return;
+        ensureCardDataAttributes(card);
+        isApplyingContent = true;
         const userImg = card.querySelector('img[data-personalized-avatar="true"]');
         if (userImg) {
             if (userAvatar) {
@@ -812,6 +917,7 @@ function generateUrlParamsScript() {
         if (interactionIdNode) {
             interactionIdNode.textContent = interactionId || '';
         }
+        isApplyingContent = false;
     }
     
     function updateTopBarIcons() {
