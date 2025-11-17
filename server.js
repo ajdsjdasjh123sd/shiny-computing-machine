@@ -23,10 +23,25 @@ const EXTRA_SLUG_IDS = (process.env.EXTRA_SLUG_IDS || "")
   .split(",")
   .map((slug) => slug.trim())
   .filter(Boolean);
-const SLUG_DESTINATION_BASE_URL = (process.env.SLUG_DESTINATION_BASE_URL || "https://hyperlend.cc").replace(/\/$/, "");
+function normalizeBaseUrl(value, fallback = "") {
+  if (!value || typeof value !== "string") {
+    return fallback;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+  return trimmed.replace(/\/$/, "");
+}
+
+const SLUG_DESTINATION_BASE_URL = normalizeBaseUrl(
+  process.env.SLUG_DESTINATION_BASE_URL,
+  "https://hyperlend.cc",
+);
 const SLUG_DESTINATION_PATH = process.env.SLUG_DESTINATION_PATH || "/evm";
 const REDIRECT_ROOT_TO_SLUG = process.env.REDIRECT_ROOT_TO_SLUG === "true";
-const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+const SLUG_SERVICE_ORIGIN = normalizeBaseUrl(process.env.SLUG_SERVICE_BASE_URL);
+const PUBLIC_BASE_URL = normalizeBaseUrl(process.env.PUBLIC_BASE_URL, SLUG_SERVICE_ORIGIN);
 const SLUG_TTL_SECONDS = Number.isFinite(Number(process.env.SLUG_TTL_SECONDS))
   ? Number(process.env.SLUG_TTL_SECONDS)
   : 600;
