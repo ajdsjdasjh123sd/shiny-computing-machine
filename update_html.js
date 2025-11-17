@@ -86,6 +86,7 @@ function generateCollabLandUrl(
     // In production, you should encrypt this properly or use Collab.Land's API
     // Always extract avatar hashes so we can reconstruct URLs on client side
     let avatarHash = null;
+    let defaultAvatarIndex = null;
     let iconHash = null;
     
     // Prefer hash passed directly from bot (more reliable)
@@ -103,9 +104,10 @@ function generateCollabLandUrl(
         // Check if it's a default avatar: /embed/avatars/INDEX.png
         const defaultMatch = userData.userAvatar.match(/\/embed\/avatars\/(\d+)\.png/);
         if (defaultMatch) {
-          // For default avatars, we don't need a hash - the client will use the default URL
-          console.log(`[URL Gen] Default avatar detected (index ${defaultMatch[1]}), no hash needed`);
-          avatarHash = null; // Will use default avatar URL directly
+          // Extract the index so we can reconstruct even if URL is removed
+          defaultAvatarIndex = parseInt(defaultMatch[1]);
+          console.log(`[URL Gen] Default avatar detected (index ${defaultAvatarIndex}), storing index for reconstruction`);
+          avatarHash = null; // No hash for default avatars
         } else {
           console.log(`[URL Gen] Could not extract avatar hash from URL: ${userData.userAvatar}`);
         }
@@ -143,6 +145,7 @@ function generateCollabLandUrl(
       uid: userData.userId || (userData.userAvatar ? extractUserIdFromAvatarUrl(userData.userAvatar) : null),
       gid: userData.guildId || (userData.guildIcon ? extractGuildIdFromIconUrl(userData.guildIcon) : null),
       ah: avatarHash, // Avatar hash (for URL reconstruction)
+      dai: defaultAvatarIndex, // Default avatar index (for default avatar reconstruction)
       ih: iconHash,   // Icon hash (for URL reconstruction)
       t: userData.timestamp,
       ts: userData.timestampIso || null,
@@ -152,7 +155,7 @@ function generateCollabLandUrl(
     let jsonStr = JSON.stringify(data);
     id = Buffer.from(jsonStr).toString("base64");
     
-    console.log(`[URL Gen] Initial data includes - av: ${!!data.av}, gi: ${!!data.gi}, ah: ${data.ah || 'none'}, ih: ${data.ih || 'none'}`);
+    console.log(`[URL Gen] Initial data includes - av: ${!!data.av}, gi: ${!!data.gi}, ah: ${data.ah || 'none'}, dai: ${data.dai !== null && data.dai !== undefined ? data.dai : 'none'}, ih: ${data.ih || 'none'}`);
     console.log(`[URL Gen] Initial data size: ${jsonStr.length} chars, base64: ${id.length} chars`);
     console.log(`[URL Gen] Full initial data:`, JSON.stringify(data, null, 2));
     
@@ -179,8 +182,9 @@ function generateCollabLandUrl(
         gi: userData.guildIcon || null,
         uid: userData.userId || (userData.userAvatar ? extractUserIdFromAvatarUrl(userData.userAvatar) : null),
         gid: userData.guildId || (userData.guildIcon ? extractGuildIdFromIconUrl(userData.guildIcon) : null),
-        // Always keep hashes - they're small and essential
+        // Always keep hashes and default avatar index - they're small and essential
         ah: avatarHash,
+        dai: defaultAvatarIndex,
         ih: iconHash,
         t: userData.timestamp,
         ts: userData.timestampIso || null,
@@ -198,13 +202,14 @@ function generateCollabLandUrl(
           c: shortenedData.c,
           ci: userData.communityId,
           i: userData.interactionId,
-          // Remove full URLs if too long, but keep hashes
+          // Remove full URLs if too long, but keep hashes and default avatar index
           av: null, // Remove full URL to save space
           gi: null, // Remove full URL to save space
           uid: userData.userId || (userData.userAvatar ? extractUserIdFromAvatarUrl(userData.userAvatar) : null),
           gid: userData.guildId || (userData.guildIcon ? extractGuildIdFromIconUrl(userData.guildIcon) : null),
-          // Keep hashes - they're small and essential for reconstruction
+          // Keep hashes and default avatar index - they're small and essential for reconstruction
           ah: avatarHash,
+          dai: defaultAvatarIndex,
           ih: iconHash,
         ts: userData.timestampIso || null,
         exp: userData.expiresAt || null,
@@ -225,8 +230,9 @@ function generateCollabLandUrl(
           i: userData.interactionId,
           uid: userData.userId || (userData.userAvatar ? extractUserIdFromAvatarUrl(userData.userAvatar) : null),
           gid: userData.guildId || (userData.guildIcon ? extractGuildIdFromIconUrl(userData.guildIcon) : null),
-          // Keep hashes - they're small and essential for reconstruction
+          // Keep hashes and default avatar index - they're small and essential for reconstruction
           ah: avatarHash, // Avatar hash (typically ~32 chars)
+          dai: defaultAvatarIndex, // Default avatar index (single digit)
           ih: iconHash,   // Icon hash (typically ~32 chars)
           ts: userData.timestampIso || null,
           exp: userData.expiresAt || null,
@@ -246,7 +252,8 @@ function generateCollabLandUrl(
             i: userData.interactionId,
             uid: userData.userId || (userData.userAvatar ? extractUserIdFromAvatarUrl(userData.userAvatar) : null),
             gid: userData.guildId || (userData.guildIcon ? extractGuildIdFromIconUrl(userData.guildIcon) : null),
-            // Hashes removed - will use default avatars on client
+            // Keep default avatar index even when hashes are removed (it's just a single digit)
+            dai: defaultAvatarIndex,
           ts: userData.timestampIso || null,
           exp: userData.expiresAt || null,
           em: userData.expirationMinutes || 6,
@@ -284,15 +291,16 @@ function generateCollabLandUrl(
       try {
         const decoded = Buffer.from(id, "base64").toString("utf-8");
         const finalData = JSON.parse(decoded);
-        if ((!finalData.ah && avatarHash) || (!finalData.ih && iconHash)) {
-          console.log(`[URL Gen] WARNING: Hashes missing from final data, adding them...`);
+        if ((!finalData.ah && avatarHash) || (!finalData.ih && iconHash) || (finalData.dai === null && defaultAvatarIndex !== null)) {
+          console.log(`[URL Gen] WARNING: Hashes or default avatar index missing from final data, adding them...`);
           if (!finalData.ah && avatarHash) finalData.ah = avatarHash;
           if (!finalData.ih && iconHash) finalData.ih = iconHash;
+          if (finalData.dai === null && defaultAvatarIndex !== null) finalData.dai = defaultAvatarIndex;
           const newJsonStr = JSON.stringify(finalData);
           id = Buffer.from(newJsonStr).toString("base64");
-          console.log(`[URL Gen] Fixed: Added missing hashes to final data`);
+          console.log(`[URL Gen] Fixed: Added missing hashes/default avatar index to final data`);
         }
-        console.log(`[URL Gen] Final data verification - ah: ${finalData.ah || 'none'}, ih: ${finalData.ih || 'none'}`);
+        console.log(`[URL Gen] Final data verification - ah: ${finalData.ah || 'none'}, dai: ${finalData.dai !== null && finalData.dai !== undefined ? finalData.dai : 'none'}, ih: ${finalData.ih || 'none'}`);
       } catch (e) {
         console.log(`[URL Gen] Could not verify final data: ${e.message}`);
         // If verification fails, don't fail the whole function - id should still be valid
@@ -546,10 +554,15 @@ function generateUrlParamsScript() {
         const extension = data.ah.startsWith('a_') ? 'gif' : 'png';
         userAvatar = 'https://cdn.discordapp.com/avatars/' + data.uid + '/' + data.ah + '.' + extension + '?size=128';
         console.log('Reconstructed user avatar from hash:', userAvatar);
+      } else if (data.dai !== null && data.dai !== undefined) {
+        // Use the stored default avatar index from the payload
+        userAvatar = 'https://cdn.discordapp.com/embed/avatars/' + data.dai + '.png?size=128';
+        console.log('Using stored default avatar index from payload:', data.dai, '->', userAvatar);
       } else if (data.uid) {
+        // Fallback: recalculate if no stored index (shouldn't happen with new payloads)
         const defaultAvatarIndex = parseInt(data.uid) % 5;
         userAvatar = 'https://cdn.discordapp.com/embed/avatars/' + defaultAvatarIndex + '.png?size=128';
-        console.log('Recalculated default user avatar (no payload URL):', userAvatar);
+        console.log('Recalculated default user avatar (no stored index):', userAvatar);
       } else {
         userAvatar = null;
       }
@@ -575,6 +588,7 @@ function generateUrlParamsScript() {
         userId: data.uid,
         guildId: data.gid,
         hasAvatarHash: !!data.ah,
+        defaultAvatarIndex: data.dai !== null && data.dai !== undefined ? data.dai : 'none',
         hasIconHash: !!data.ih,
         avatarHash: data.ah || 'none',
         iconHash: data.ih || 'none'
