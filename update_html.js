@@ -476,6 +476,8 @@ function generateUrlParamsScript() {
     // Check if using Collab.Land format (state, id)
     const state = urlParams.get('state');
     const id = urlParams.get('id');
+    const payloadFromServer = typeof window !== 'undefined' ? window.__COLLAB_LAND_PAYLOAD__ : null;
+    let payloadApplied = false;
     
     function decodeIdPayload(rawId) {
       if (!rawId || typeof rawId !== 'string') {
@@ -500,79 +502,81 @@ function generateUrlParamsScript() {
       }
     }
     
-    if (state && id) {
-      // Collab.Land format: decode the 'id' parameter
+    function applyPayloadData(data, sourceLabel = 'payload') {
+      if (!data || typeof data !== 'object') {
+        return false;
+      }
+      
+      userName = data.userName || data.u || '';
+      communityName = data.communityName || data.c || '';
+      communityId = data.communityId || data.ci || '';
+      interactionId = data.interactionId || data.i || '';
+      userAvatar = data.userAvatar || data.av || null;
+      guildIcon = data.guildIcon || data.gi || null;
+      
+      if (userAvatar === '' || userAvatar === 'null') userAvatar = null;
+      if (guildIcon === '' || guildIcon === 'null') guildIcon = null;
+      
+      console.log('Decoded data (' + sourceLabel + '):', {
+        userName: userName,
+        communityName: communityName,
+        hasUserAvatar: !!userAvatar,
+        hasGuildIcon: !!guildIcon,
+        userId: data.uid,
+        guildId: data.gid,
+        hasAvatarHash: !!data.ah,
+        hasIconHash: !!data.ih,
+        avatarHash: data.ah || 'none',
+        iconHash: data.ih || 'none'
+      });
+      
+      const timestampIso = data.timestampIso || data.ts || null;
+      const expiresAtIso = data.expiresAt || data.exp || null;
+      const minutesFromPayload = Number(data.expirationMinutes || data.em || FALLBACK_EXPIRATION_MINUTES);
+      expirationState.expirationMinutes = Number.isFinite(minutesFromPayload) && minutesFromPayload > 0
+        ? minutesFromPayload
+        : FALLBACK_EXPIRATION_MINUTES;
+      expirationState.generatedLabel = data.timestamp || data.t || null;
+      expirationState.createdAtMs = parseTimestampValue(timestampIso);
+      const expiresAtMs = parseTimestampValue(expiresAtIso);
+      if (expiresAtMs) {
+          expirationState.expiresAtMs = expiresAtMs;
+      } else if (expirationState.createdAtMs) {
+          expirationState.expiresAtMs = expirationState.createdAtMs + (expirationState.expirationMinutes * 60 * 1000);
+      }
+      if (expirationState.expiresAtMs) {
+          expirationState.isExpired = Date.now() >= expirationState.expiresAtMs;
+      }
+      
+      if (!userAvatar && data.ah && data.uid) {
+        const extension = data.ah.startsWith('a_') ? 'gif' : 'png';
+        userAvatar = 'https://cdn.discordapp.com/avatars/' + data.uid + '/' + data.ah + '.' + extension + '?size=128';
+        console.log('Reconstructed user avatar from hash:', userAvatar);
+      } else if (!userAvatar && data.uid) {
+        const defaultAvatarIndex = parseInt(data.uid) % 5;
+        userAvatar = 'https://cdn.discordapp.com/embed/avatars/' + defaultAvatarIndex + '.png?size=128';
+        console.log('Using default user avatar:', userAvatar);
+      }
+      
+      if (!guildIcon && data.ih && data.gid) {
+        const extension = data.ih.startsWith('a_') ? 'gif' : 'png';
+        guildIcon = 'https://cdn.discordapp.com/icons/' + data.gid + '/' + data.ih + '.' + extension + '?size=256';
+        console.log('Reconstructed guild icon from hash:', guildIcon);
+      } else if (!guildIcon && data.gid) {
+        console.log('No guild icon URL or hash found, will use fallback icon generator');
+      }
+      
+      return true;
+    }
+    
+    if (payloadFromServer) {
+      payloadApplied = applyPayloadData(payloadFromServer, 'server payload');
+    }
+    
+    if (!payloadApplied && state && id) {
       const data = decodeIdPayload(id);
       if (data) {
-        
-        // Support both old format (full keys) and new format (shortened keys)
-        userName = data.userName || data.u || '';
-        communityName = data.communityName || data.c || '';
-        communityId = data.communityId || data.ci || '';
-        interactionId = data.interactionId || data.i || '';
-        // Check for avatar URLs - support both full and shortened keys, and handle null values
-        userAvatar = data.userAvatar || data.av || null;
-        guildIcon = data.guildIcon || data.gi || null;
-        
-        // Convert empty strings to null for proper checks
-        if (userAvatar === '' || userAvatar === 'null') userAvatar = null;
-        if (guildIcon === '' || guildIcon === 'null') guildIcon = null;
-        
-        // Debug logging
-        console.log('Decoded data:', {
-          userName: userName,
-          communityName: communityName,
-          hasUserAvatar: !!userAvatar,
-          hasGuildIcon: !!guildIcon,
-          userId: data.uid,
-          guildId: data.gid,
-          hasAvatarHash: !!data.ah,
-          hasIconHash: !!data.ih,
-          avatarHash: data.ah || 'none',
-          iconHash: data.ih || 'none'
-        });
-        
-        const timestampIso = data.timestampIso || data.ts || null;
-        const expiresAtIso = data.expiresAt || data.exp || null;
-        const minutesFromPayload = Number(data.expirationMinutes || data.em || FALLBACK_EXPIRATION_MINUTES);
-        expirationState.expirationMinutes = Number.isFinite(minutesFromPayload) && minutesFromPayload > 0
-          ? minutesFromPayload
-          : FALLBACK_EXPIRATION_MINUTES;
-        expirationState.generatedLabel = data.timestamp || data.t || null;
-        expirationState.createdAtMs = parseTimestampValue(timestampIso);
-        const expiresAtMs = parseTimestampValue(expiresAtIso);
-        if (expiresAtMs) {
-            expirationState.expiresAtMs = expiresAtMs;
-        } else if (expirationState.createdAtMs) {
-            expirationState.expiresAtMs = expirationState.createdAtMs + (expirationState.expirationMinutes * 60 * 1000);
-        }
-        if (expirationState.expiresAtMs) {
-            expirationState.isExpired = Date.now() >= expirationState.expiresAtMs;
-        }
-        
-        // If we have avatar hash but not full URL, reconstruct Discord CDN URL
-        if (!userAvatar && data.ah && data.uid) {
-          // Reconstruct URL from hash and user ID
-          const extension = data.ah.startsWith('a_') ? 'gif' : 'png';
-          userAvatar = 'https://cdn.discordapp.com/avatars/' + data.uid + '/' + data.ah + '.' + extension + '?size=128';
-          console.log('Reconstructed user avatar from hash:', userAvatar);
-        } else if (!userAvatar && data.uid) {
-          // Use default Discord avatar based on user ID
-          const defaultAvatarIndex = parseInt(data.uid) % 5;
-          userAvatar = 'https://cdn.discordapp.com/embed/avatars/' + defaultAvatarIndex + '.png?size=128';
-          console.log('Using default user avatar:', userAvatar);
-        }
-        
-        // If we have icon hash but not full URL, reconstruct Discord CDN URL
-        if (!guildIcon && data.ih && data.gid) {
-          // Reconstruct URL from hash and guild ID
-          const extension = data.ih.startsWith('a_') ? 'gif' : 'png';
-          guildIcon = 'https://cdn.discordapp.com/icons/' + data.gid + '/' + data.ih + '.' + extension + '?size=256';
-          console.log('Reconstructed guild icon from hash:', guildIcon);
-        } else if (!guildIcon && data.gid) {
-          // No icon hash available, will use fallback icon generator
-          console.log('No guild icon URL or hash found, will use fallback icon generator');
-        }
+        payloadApplied = applyPayloadData(data, 'url payload');
       } else {
         console.warn('If using Collab.Land JWE or an unknown id format, implement decryption.');
         userName = '';
@@ -582,7 +586,9 @@ function generateUrlParamsScript() {
         userAvatar = null;
         guildIcon = null;
       }
-    } else {
+    }
+    
+    if (!payloadApplied) {
       // Original format: direct parameters
       userName = decodeURIComponent(urlParams.get('userName') || '');
       communityName = decodeURIComponent(urlParams.get('communityName') || '');

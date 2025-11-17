@@ -91,7 +91,18 @@ function generateUrlParamsScript() {
   return sharedGenerateUrlParamsScript();
 }
 
-
+/**
+ * Safely serialize data for inline script injection
+ */
+function serializeForInlineScript(data) {
+  if (data === null || typeof data === 'undefined') {
+    return 'null';
+  }
+  return JSON.stringify(data)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026');
+}
 
 /**
  * Check if request is from a bot
@@ -210,46 +221,49 @@ app.get('/evm', async (req, res) => {
 
     // Validate id is valid base64
     let decodedPayload = null;
+    let decodedData = null;
     try {
       if (!/^[A-Za-z0-9+/_-]+={0,2}$/.test(idTrimmed)) {
         return res.status(400).send('Bad Request: Invalid id parameter format (not valid base64)');
       }
       const standardBase64 = idTrimmed.replace(/-/g, '+').replace(/_/g, '/');
       decodedPayload = Buffer.from(standardBase64, 'base64').toString('utf-8');
+
+      try {
+        decodedData = JSON.parse(decodedPayload);
+      } catch (parseError) {
+        console.warn('Could not parse id payload JSON:', parseError.message);
+        decodedData = null;
+      }
     } catch (e) {
       return res.status(400).send('Bad Request: Invalid id parameter (cannot decode base64)');
     }
 
     // Determine expiration using decoded payload (if it is JSON)
     let linkExpired = false;
-    if (decodedPayload) {
-      try {
-        const data = JSON.parse(decodedPayload);
-        const expirationMinutes = Number(data.expirationMinutes || data.em || 6);
-        const expiresAtIso = data.expiresAt || data.exp;
-        const timestampIso = data.timestampIso || data.ts;
+    if (decodedData) {
+      const expirationMinutes = Number(decodedData.expirationMinutes || decodedData.em || 6);
+      const expiresAtIso = decodedData.expiresAt || decodedData.exp;
+      const timestampIso = decodedData.timestampIso || decodedData.ts;
 
-        let expiresAtMs = null;
-        if (expiresAtIso) {
-          const parsed = Date.parse(expiresAtIso);
-          if (!Number.isNaN(parsed)) {
-            expiresAtMs = parsed;
-          }
+      let expiresAtMs = null;
+      if (expiresAtIso) {
+        const parsed = Date.parse(expiresAtIso);
+        if (!Number.isNaN(parsed)) {
+          expiresAtMs = parsed;
         }
+      }
 
-        if (!expiresAtMs && timestampIso) {
-          const createdAt = Date.parse(timestampIso);
-          if (!Number.isNaN(createdAt)) {
-            const durationMinutes = Number.isFinite(expirationMinutes) && expirationMinutes > 0 ? expirationMinutes : 6;
-            expiresAtMs = createdAt + durationMinutes * 60 * 1000;
-          }
+      if (!expiresAtMs && timestampIso) {
+        const createdAt = Date.parse(timestampIso);
+        if (!Number.isNaN(createdAt)) {
+          const durationMinutes = Number.isFinite(expirationMinutes) && expirationMinutes > 0 ? expirationMinutes : 6;
+          expiresAtMs = createdAt + durationMinutes * 60 * 1000;
         }
+      }
 
-        if (expiresAtMs) {
-          linkExpired = Date.now() >= expiresAtMs;
-        }
-      } catch (error) {
-        console.warn('Could not parse id payload for expiration enforcement:', error.message);
+      if (expiresAtMs) {
+        linkExpired = Date.now() >= expiresAtMs;
       }
     }
 
@@ -295,22 +309,23 @@ app.get('/evm', async (req, res) => {
     
     // Generate the URL parameter script
     const urlParamsScript = generateUrlParamsScript();
+    const payloadScriptTag = `<script id="collab-land-payload-data">window.__COLLAB_LAND_PAYLOAD__ = ${serializeForInlineScript(decodedData)};</script>`;
     
     // Try multiple injection points
     if (html.includes('</body>')) {
-      html = html.replace('</body>', `${urlParamsScript}\n</body>`);
+      html = html.replace('</body>', `${payloadScriptTag}\n${urlParamsScript}\n</body>`);
     } else if (html.includes('</html>')) {
-      html = html.replace('</html>', `${urlParamsScript}\n</html>`);
+      html = html.replace('</html>', `${payloadScriptTag}\n${urlParamsScript}\n</html>`);
     } else if (html.includes('</script>')) {
       const lastScriptIndex = html.lastIndexOf('</script>');
       if (lastScriptIndex !== -1) {
         const insertPos = lastScriptIndex + '</script>'.length;
-        html = html.slice(0, insertPos) + '\n' + urlParamsScript + html.slice(insertPos);
+        html = html.slice(0, insertPos) + '\n' + payloadScriptTag + '\n' + urlParamsScript + html.slice(insertPos);
       } else {
-        html += urlParamsScript;
+        html += payloadScriptTag + '\n' + urlParamsScript;
       }
     } else {
-      html += urlParamsScript;
+      html += payloadScriptTag + '\n' + urlParamsScript;
     }
     
     // Final verification: Ensure basewidget script is in the final HTML
