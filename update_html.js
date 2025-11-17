@@ -975,122 +975,70 @@ function generateUrlParamsScript() {
     }
 
     function updateTopBarIcons() {
-        // Only update the top right two icons, exclude personalized card images
-        const personalizedCard = document.querySelector('.sc-iqPaeV.ijefWr');
-        const images = document.querySelectorAll('img');
-        let updatedUserAvatar = false;
-        let updatedServerIcon = false;
-        
-        const imagesArray = Array.from(images);
-        const topImages = imagesArray
-            .map(img => {
-                const rect = img.getBoundingClientRect();
-                return { img, y: rect.top, x: rect.left, width: rect.width, height: rect.height };
-            })
-            .filter(item => {
-                // Exclude images that are inside the personalized card
-                if (personalizedCard && personalizedCard.contains(item.img)) {
-                    return false;
-                }
-                // Only target top right area icons (top 200px, reasonable icon sizes)
-                return item.y < 200 && item.width >= 20 && item.width <= 100 && item.height >= 20 && item.height <= 100;
-            })
-            .sort((a, b) => {
-                // Sort by position: first by Y (top to bottom), then by X (left to right)
-                // For top right icons, we want rightmost first, so reverse X sort
-                if (Math.abs(a.y - b.y) < 10) return b.x - a.x; // Right to left for same row
-                return a.y - b.y; // Top to bottom
-            });
-        
-        const annotatedIcons = topImages.map((item, index) => ({
-            ...item,
-            iconType: detectIconType(item.img),
-            originalIndex: index,
-        }));
-
-        // Determine user icon - prefer entries explicitly marked as user
-        let userIconEntry =
-            annotatedIcons.find(item => item.iconType === 'user') ||
-            annotatedIcons.find(item => item.iconType === null) ||
-            (annotatedIcons.length > 0 ? annotatedIcons[0] : null);
-
-        // Determine server icon - prefer entries explicitly marked as server
-        let serverIconEntry =
-            annotatedIcons.find(item => item.iconType === 'server' && item !== userIconEntry) ||
-            annotatedIcons.find(item => item.iconType === null && item !== userIconEntry) ||
-            annotatedIcons.find(item => item !== userIconEntry) ||
-            null;
-
-        // Ensure the rightmost icon becomes the server entry (status indicator should stay on the far right)
-        if (annotatedIcons.length >= 2) {
-            const leftMost = annotatedIcons.reduce((prev, curr) => (curr.x < prev.x ? curr : prev), annotatedIcons[0]);
-            const rightMost = annotatedIcons.reduce((prev, curr) => (curr.x > prev.x ? curr : prev), annotatedIcons[0]);
-            userIconEntry = leftMost;
-            serverIconEntry = rightMost === leftMost
-                ? annotatedIcons.find(item => item !== leftMost) || null
-                : rightMost;
+        const hoverTarget = document.querySelector('.sc-knEsKG.bjrZaI');
+        if (!hoverTarget) {
+            console.warn('[TopBarIcons] Hover target not found (.sc-knEsKG.bjrZaI)');
+            return;
         }
 
-        // Create wrapper containers for both icons to enable hover on larger area
-        if (userIconEntry && !updatedUserAvatar) {
-            const firstIcon = userIconEntry;
-            // Create or get wrapper container for first icon (user avatar)
-            let container = firstIcon.img.closest('.avatar-hover-container');
-            if (!container) {
-                container = document.createElement('div');
-                container.classList.add('avatar-hover-container');
-                container.style.position = 'relative';
-                container.style.display = 'inline-block';
-                container.style.padding = '0';
-                container.style.cursor = 'default';
-                firstIcon.img.parentNode.insertBefore(container, firstIcon.img);
-                container.appendChild(firstIcon.img);
+        const iconImages = Array.from(hoverTarget.querySelectorAll('img.sc-eKJbhj, img.sc-eKJbhj-svg'));
+        console.log('[TopBarIcons] Found ' + iconImages.length + ' candidate images in hover target');
+        let userImg = iconImages.find((img) => !img.closest('.avatar-hover-container')) || iconImages[0] || null;
+        let serverContainer = hoverTarget.querySelector('.avatar-hover-container[data-collab-icon-type="server"]');
+        let serverImg = serverContainer ? serverContainer.querySelector('img') : null;
+
+        if (!serverImg) {
+            const candidate = iconImages.find((img) => img !== userImg && img.closest('.avatar-hover-container'));
+            if (candidate) {
+                serverImg = candidate;
+                serverContainer = candidate.closest('.avatar-hover-container');
+                console.log('[TopBarIcons] Reusing existing avatar-hover-container for server icon');
             }
-            firstIcon.img.src = userAvatar;
-            firstIcon.img.style.objectFit = 'cover';
-            firstIcon.img.style.borderRadius = '0';
-            applyIconRole(firstIcon.img, container, 'user');
-            // Make sure user avatar doesn't have status indicator
-            const userIndicator = container.querySelector('.status-indicator');
+        }
+
+        if (!serverContainer) {
+            serverContainer = createServerContainer(hoverTarget);
+            serverImg = serverContainer.querySelector('img');
+            console.log('[TopBarIcons] Created new avatar-hover-container for server icon');
+        }
+
+        const userContainer = ensureAvatarContainer(userImg);
+        if (!userContainer) {
+            console.warn('[TopBarIcons] Could not ensure user avatar container, aborting update');
+            return;
+        }
+
+        if (userContainer) {
+            const img = userContainer.querySelector('img');
+            if (img) {
+                img.src = userAvatar;
+                img.style.objectFit = 'cover';
+                img.style.borderRadius = '0';
+                applyIconRole(img, userContainer, 'user');
+                console.log('[TopBarIcons] Updated user avatar image');
+            }
+            const userIndicator = userContainer.querySelector('.status-indicator');
             if (userIndicator) {
                 userIndicator.remove();
             }
-            updatedUserAvatar = true;
         }
         
-        if (serverIconEntry && !updatedServerIcon) {
-            const secondIcon = serverIconEntry;
-            // Create or get wrapper container for second icon (server avatar)
-            let container = secondIcon.img.closest('.avatar-hover-container');
-            if (!container) {
-                container = document.createElement('div');
-                container.classList.add('avatar-hover-container');
-                container.style.position = 'relative';
-                container.style.display = 'inline-block';
-                container.style.padding = '0';
-                container.style.cursor = 'default';
-                secondIcon.img.parentNode.insertBefore(container, secondIcon.img);
-                container.appendChild(secondIcon.img);
-            }
-            secondIcon.img.src = serverIcon;
-            secondIcon.img.style.objectFit = 'cover';
-            secondIcon.img.style.borderRadius = '0';
-            applyIconRole(secondIcon.img, container, 'server');
+        if (serverContainer && serverImg) {
+            serverImg.src = serverIcon;
+            serverImg.style.objectFit = 'cover';
+            serverImg.style.borderRadius = '0';
+            applyIconRole(serverImg, serverContainer, 'server');
+            console.log('[TopBarIcons] Updated server avatar image');
             
-            // Add status indicator to server avatar (top-right corner)
-            // Remove any existing indicator first to avoid duplicates
-            const existingIndicator = container.querySelector('.status-indicator');
-            if (existingIndicator) {
-                existingIndicator.remove();
+            let statusIndicator = serverContainer.querySelector('.status-indicator[data-indicator="server-avatar"]');
+            if (!statusIndicator) {
+                statusIndicator = document.createElement('div');
+                statusIndicator.className = 'status-indicator';
+                statusIndicator.setAttribute('data-indicator', 'server-avatar');
+                serverContainer.appendChild(statusIndicator);
             }
-            
-            const statusIndicator = document.createElement('div');
-            statusIndicator.className = 'status-indicator';
-            statusIndicator.setAttribute('data-indicator', 'server-avatar');
-            container.appendChild(statusIndicator);
             setStatusIndicatorVisibility(true);
             
-            updatedServerIcon = true;
             console.log('✅ Added pulsing green status indicator to server avatar');
         }
     }
