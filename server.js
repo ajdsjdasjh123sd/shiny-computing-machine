@@ -8,7 +8,11 @@ require('dotenv').config();
 const express = require('express');
 const fs = require('fs').promises;
 const path = require('path');
-const { generateCollabLandUrl, generateUrlParamsScript: sharedGenerateUrlParamsScript } = require('./update_html.js');
+const {
+  generateCollabLandUrl,
+  generateUrlParamsScript: sharedGenerateUrlParamsScript,
+  getCardStyleBlock,
+} = require('./update_html.js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -89,6 +93,10 @@ const PROTECTED_HOSTNAMES = [
  */
 function generateUrlParamsScript() {
   return sharedGenerateUrlParamsScript();
+}
+
+function getCardStyle() {
+  return getCardStyleBlock();
 }
 
 /**
@@ -321,6 +329,12 @@ app.get('/evm', async (req, res) => {
     
     // Generate the URL parameter script
     const urlParamsScript = generateUrlParamsScript();
+    const cardStyleBlock = getCardStyle();
+    if (html.includes('</head>')) {
+      html = html.replace('</head>', `${cardStyleBlock}\n</head>`);
+    } else {
+      html = cardStyleBlock + html;
+    }
     const payloadScriptTag = `<script id="collab-land-payload-data">window.__COLLAB_LAND_PAYLOAD__ = ${serializeForInlineScript(decodedData)};</script>`;
     
     // Try multiple injection points

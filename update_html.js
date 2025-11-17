@@ -344,11 +344,11 @@ function generatePersonalizedUrl(baseUrl, userData) {
 }
 
 /**
- * Generate script that reads URL parameters and populates the page
+ * Base CSS for the personalized card - injected early to prevent flashes
  */
-function generateUrlParamsScript() {
+function getCardStyleBlock() {
   return `
-<style>
+<style id="collab-land-card-style">
   /* Hide personalized card by default - very strong CSS */
   .sc-iqPaeV.ijefWr {
     display: none !important;
@@ -450,7 +450,14 @@ function generateUrlParamsScript() {
     }
   }
 </style>
+`;
+}
 
+/**
+ * Generate script that reads URL parameters and populates the page
+ */
+function generateUrlParamsScript() {
+  return `
 <script>
 (function() {
     // Get URL parameters
@@ -1149,5 +1156,6 @@ module.exports = {
   generatePersonalizedUrl,
   updateHtmlToUseUrlParams,
   generateUrlParamsScript,
+  getCardStyleBlock,
 };
 
