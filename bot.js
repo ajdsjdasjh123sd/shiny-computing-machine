@@ -2,7 +2,70 @@ require("dotenv").config();
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const { generateCollabLandUrl } = require("./update_html.js");
 const path = require("path");
+const http = require("http");
+const https = require("https");
+const { URL } = require("url");
 const APPEND_EVM_PATH = process.env.APPEND_EVM_PATH !== "false";
+const SLUG_SERVICE_BASE_URL = process.env.SLUG_SERVICE_BASE_URL || process.env.HTML_BASE_URL || null;
+const ENABLE_SLUG_SERVICE = process.env.ENABLE_SLUG_SERVICE !== "false";
+
+function postJson(urlObj, payload) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(payload);
+    const transport = urlObj.protocol === "https:" ? https : http;
+    const options = {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "content-length": Buffer.byteLength(body),
+      },
+    };
+
+    const req = transport.request(urlObj, options, (res) => {
+      let responseBody = "";
+      res.on("data", (chunk) => {
+        responseBody += chunk;
+      });
+      res.on("end", () => {
+        let parsed = null;
+        if (responseBody) {
+          try {
+            parsed = JSON.parse(responseBody);
+          } catch (error) {
+            console.warn(`[Slug Service] Failed to parse response JSON: ${error.message}`);
+          }
+        }
+        resolve({ statusCode: res.statusCode, body: parsed });
+      });
+    });
+
+    req.on("error", (error) => {
+      reject(error);
+    });
+
+    req.write(body);
+    req.end();
+  });
+}
+
+async function createSlugRedirect({ state, id, expiresAt }) {
+  if (!SLUG_SERVICE_BASE_URL || !state || !id) {
+    return null;
+  }
+
+  try {
+    const endpoint = new URL("/api/slugs", SLUG_SERVICE_BASE_URL);
+    const response = await postJson(endpoint, { state, id, expiresAt });
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return response.body;
+    }
+    console.warn(`[Slug Service] Unexpected response (${response.statusCode}): ${JSON.stringify(response.body)}`);
+  } catch (error) {
+    console.error(`[Slug Service] Error creating slug: ${error.message}`);
+  }
+
+  return null;
+}
 
 const client = new Client({
   intents: [
@@ -198,9 +261,28 @@ client.on("interactionCreate", async (interaction) => {
       };
 
       // Generate regular link using Collab.Land format (evm?state=...&id=...) for dynamic content
-      const personalizedUrl = generateCollabLandUrl(baseHtmlUrl, userData, {
+      const linkResult = generateCollabLandUrl(baseHtmlUrl, userData, {
         appendEvmPath: APPEND_EVM_PATH,
+        includeMeta: true,
       });
+
+      let personalizedUrl = typeof linkResult === "string" ? linkResult : linkResult.url;
+      const generatedState = typeof linkResult === "object" ? linkResult.state : null;
+      const generatedId = typeof linkResult === "object" ? linkResult.id : null;
+
+      if (ENABLE_SLUG_SERVICE && generatedState && generatedId) {
+        const slugResponse = await createSlugRedirect({
+          state: generatedState,
+          id: generatedId,
+          expiresAt: expiresAtIso,
+        });
+        if (slugResponse?.slugUrl) {
+          personalizedUrl = slugResponse.slugUrl;
+          console.log(`[Slug Service] Created slug ${slugResponse.slugId} -> ${personalizedUrl}`);
+        } else {
+          console.warn("[Slug Service] Falling back to direct URL (slug creation failed).");
+        }
+      }
       
       console.log(`✓ Generated regular link URL (length: ${personalizedUrl.length}): ${personalizedUrl}`);
       console.log(`✓ Link contains dynamic content: ${communityName} (${guildId})`);

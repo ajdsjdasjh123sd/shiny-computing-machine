@@ -325,12 +325,23 @@ function generateCollabLandUrl(
     ? options.appendEvmPath
     : !/\/slugs\//i.test(cleanBaseUrl);
 
+  let finalUrl;
   if (!appendEvmPath) {
     const separator = cleanBaseUrl.includes("?") ? "&" : "?";
-    return `${cleanBaseUrl}${separator}${params.toString()}`;
+    finalUrl = `${cleanBaseUrl}${separator}${params.toString()}`;
+  } else {
+    finalUrl = `${cleanBaseUrl}/evm?${params.toString()}`;
   }
 
-  return `${cleanBaseUrl}/evm?${params.toString()}`;
+  if (options?.includeMeta) {
+    return {
+      url: finalUrl,
+      state,
+      id,
+    };
+  }
+
+  return finalUrl;
 }
 
 /**

