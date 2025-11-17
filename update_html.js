@@ -974,6 +974,60 @@ function generateUrlParamsScript() {
         setIconType(container, type);
     }
 
+    function ensureAvatarContainer(img) {
+        if (!img || !img.parentElement) {
+            console.warn('[TopBarIcons] Cannot wrap avatar - image or parent missing');
+            return null;
+        }
+        let container = img.closest('.avatar-hover-container');
+        if (container) {
+            return container;
+        }
+        container = document.createElement('div');
+        container.className = 'avatar-hover-container';
+        img.parentElement.insertBefore(container, img);
+        container.appendChild(img);
+        return container;
+    }
+
+    function createServerContainer(hoverTarget) {
+        if (!hoverTarget) {
+            console.warn('[TopBarIcons] Cannot create server container - hover target missing');
+            return null;
+        }
+
+        const container = document.createElement('div');
+        container.className = 'avatar-hover-container';
+        container.setAttribute('data-collab-icon-type', 'server');
+
+        const referenceImg = hoverTarget.querySelector('img.sc-eKJbhj, img.sc-eKJbhj-svg');
+        const serverImg = referenceImg ? referenceImg.cloneNode(false) : document.createElement('img');
+
+        if (referenceImg) {
+            serverImg.removeAttribute('src');
+            serverImg.className = referenceImg.className;
+        } else {
+            serverImg.className = 'sc-eKJbhj';
+        }
+
+        serverImg.alt = 'Server icon';
+        serverImg.setAttribute('aria-label', 'Server icon');
+        serverImg.setAttribute('draggable', 'false');
+        serverImg.style.objectFit = 'cover';
+        serverImg.style.borderRadius = '0';
+
+        container.appendChild(serverImg);
+
+        const userContainer = hoverTarget.querySelector('.avatar-hover-container[data-collab-icon-type="user"]');
+        if (userContainer && userContainer.nextSibling) {
+            hoverTarget.insertBefore(container, userContainer.nextSibling);
+        } else {
+            hoverTarget.appendChild(container);
+        }
+
+        return container;
+    }
+
     function updateTopBarIcons() {
         const hoverTarget = document.querySelector('.sc-knEsKG.bjrZaI');
         if (!hoverTarget) {
