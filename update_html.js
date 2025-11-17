@@ -350,24 +350,19 @@ function generateUrlParamsScript() {
   return `
 <style>
   /* Hide personalized card by default - very strong CSS */
-  .sc-iqPaeV.ijefWr:not(.show) {
+  .sc-iqPaeV.ijefWr {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
     pointer-events: none !important;
   }
   
-  /* Show card only when .show class is present */
   .sc-iqPaeV.ijefWr.show {
     display: block !important;
     visibility: visible !important;
     opacity: 1 !important;
     pointer-events: auto !important;
-  }
-  
-  /* Additional fallback - hide by default even without class check */
-  .sc-iqPaeV.ijefWr {
-    display: none !important;
+    transition: opacity 0.12s ease-in-out;
   }
   
   .sc-iqPaeV.ijefWr .sc-eKJbhj.bvTcOo {
