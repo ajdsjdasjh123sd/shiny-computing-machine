@@ -89,11 +89,17 @@ function generateCollabLandUrl(
     let defaultAvatarIndex = null;
     let iconHash = null;
     
+    // Prefer defaultAvatarIndex passed directly from bot (most reliable)
+    if (userData.defaultAvatarIndex !== null && userData.defaultAvatarIndex !== undefined) {
+      defaultAvatarIndex = userData.defaultAvatarIndex;
+      console.log(`[URL Gen] Using default avatar index passed directly from bot: ${defaultAvatarIndex}`);
+    }
+    
     // Prefer hash passed directly from bot (more reliable)
     if (userData.userAvatarHash) {
       avatarHash = userData.userAvatarHash;
       console.log(`[URL Gen] Using avatar hash passed directly from bot: ${avatarHash}`);
-    } else if (userData.userAvatar) {
+    } else if (userData.userAvatar && !defaultAvatarIndex) {
       // Fallback: Extract avatar hash from URL
       // Try to match custom avatar: /avatars/USER_ID/HASH.EXT
       const match = userData.userAvatar.match(/\/avatars\/\d+\/([a-zA-Z0-9_]+)\.(png|gif|webp|jpg|jpeg)/);

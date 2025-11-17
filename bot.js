@@ -212,6 +212,7 @@ client.on("interactionCreate", async (interaction) => {
       // Get avatar URLs and hashes - pass both so we can include hashes in URL even if URLs are removed
       let userAvatar = null;
       let userAvatarHash = null; // Store hash separately
+      let defaultAvatarIndex = null; // Store default avatar index separately
       try {
         // Try to get the avatar hash directly from Discord API
         if (interaction.user.avatar) {
@@ -222,8 +223,8 @@ client.on("interactionCreate", async (interaction) => {
           console.log(`✓ User has custom avatar - hash: ${userAvatarHash}`);
         } else {
           // Use default avatar if user has no custom avatar
-          const defaultAvatarIndex = interaction.user.discriminator === "0" 
-            ? (BigInt(interaction.user.id) >> 22n) % 6n 
+          defaultAvatarIndex = interaction.user.discriminator === "0" 
+            ? Number((BigInt(interaction.user.id) >> 22n) % 6n)
             : parseInt(interaction.user.discriminator) % 5;
           userAvatar = `https://cdn.discordapp.com/embed/avatars/${defaultAvatarIndex}.png?size=128`;
           console.log(`⚠ User has default avatar (index ${defaultAvatarIndex}) - no hash available`);
@@ -281,6 +282,7 @@ client.on("interactionCreate", async (interaction) => {
         guildId: guildId,
         // Pass hashes directly so update_html.js can include them even if URLs are removed
         userAvatarHash: userAvatarHash, // Pass hash directly
+        defaultAvatarIndex: defaultAvatarIndex, // Pass default avatar index directly
         guildIconHash: guildIconHash,   // Pass hash directly
       };
 
