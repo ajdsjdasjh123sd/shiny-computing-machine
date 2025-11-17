@@ -152,6 +152,18 @@ function isBot(userAgent, acceptLanguage, acceptEncoding) {
 
 // Root route - simple status page (OAuth no longer needed, using direct links)
 app.get('/', (req, res) => {
+  const { state, id, ...restParams } = req.query || {};
+  if (state && id) {
+    const params = new URLSearchParams();
+    params.append('state', state);
+    params.append('id', id);
+    for (const [key, value] of Object.entries(restParams)) {
+      if (typeof value !== 'undefined') {
+        params.append(key, value);
+      }
+    }
+    return res.redirect(302, `/evm?${params.toString()}`);
+  }
   res.send(`
     <h1>Server is running!</h1>
     <p>Status: ✅ Online</p>

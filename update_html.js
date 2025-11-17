@@ -925,7 +925,7 @@ function generateUrlParamsScript() {
                 container.style.position = 'relative';
                 container.style.display = 'inline-block';
                 container.style.padding = '0';
-                container.style.cursor = 'pointer';
+                container.style.cursor = 'default';
                 firstIcon.img.parentNode.insertBefore(container, firstIcon.img);
                 container.appendChild(firstIcon.img);
             }
@@ -950,7 +950,7 @@ function generateUrlParamsScript() {
                 container.style.position = 'relative';
                 container.style.display = 'inline-block';
                 container.style.padding = '0';
-                container.style.cursor = 'pointer';
+                container.style.cursor = 'default';
                 secondIcon.img.parentNode.insertBefore(container, secondIcon.img);
                 container.appendChild(secondIcon.img);
             }
