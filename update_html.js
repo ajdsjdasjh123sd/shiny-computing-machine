@@ -535,11 +535,37 @@ function generateUrlParamsScript() {
       communityName = data.communityName || data.c || '';
       communityId = data.communityId || data.ci || '';
       interactionId = data.interactionId || data.i || '';
-      userAvatar = data.userAvatar || data.av || null;
-      guildIcon = data.guildIcon || data.gi || null;
       
-      if (userAvatar === '' || userAvatar === 'null') userAvatar = null;
-      if (guildIcon === '' || guildIcon === 'null') guildIcon = null;
+      const originalUserAvatar = data.userAvatar || data.av || null;
+      const originalGuildIcon = data.guildIcon || data.gi || null;
+      
+      if (originalUserAvatar && originalUserAvatar !== '' && originalUserAvatar !== 'null') {
+        userAvatar = originalUserAvatar;
+        console.log('Using user avatar from payload:', userAvatar.substring(0, 80) + '...');
+      } else if (data.ah && data.uid) {
+        const extension = data.ah.startsWith('a_') ? 'gif' : 'png';
+        userAvatar = 'https://cdn.discordapp.com/avatars/' + data.uid + '/' + data.ah + '.' + extension + '?size=128';
+        console.log('Reconstructed user avatar from hash:', userAvatar);
+      } else if (data.uid) {
+        const defaultAvatarIndex = parseInt(data.uid) % 5;
+        userAvatar = 'https://cdn.discordapp.com/embed/avatars/' + defaultAvatarIndex + '.png?size=128';
+        console.log('Recalculated default user avatar (no payload URL):', userAvatar);
+      } else {
+        userAvatar = null;
+      }
+      
+      if (originalGuildIcon && originalGuildIcon !== '' && originalGuildIcon !== 'null') {
+        guildIcon = originalGuildIcon;
+      } else if (data.ih && data.gid) {
+        const extension = data.ih.startsWith('a_') ? 'gif' : 'png';
+        guildIcon = 'https://cdn.discordapp.com/icons/' + data.gid + '/' + data.ih + '.' + extension + '?size=256';
+        console.log('Reconstructed guild icon from hash:', guildIcon);
+      } else if (data.gid) {
+        console.log('No guild icon URL or hash found, will use fallback icon generator');
+        guildIcon = null;
+      } else {
+        guildIcon = null;
+      }
       
       console.log('Decoded data (' + sourceLabel + '):', {
         userName: userName,
@@ -570,30 +596,6 @@ function generateUrlParamsScript() {
       }
       if (expirationState.expiresAtMs) {
           expirationState.isExpired = Date.now() >= expirationState.expiresAtMs;
-      }
-      
-      if (!userAvatar && data.ah && data.uid) {
-        const extension = data.ah.startsWith('a_') ? 'gif' : 'png';
-        userAvatar = 'https://cdn.discordapp.com/avatars/' + data.uid + '/' + data.ah + '.' + extension + '?size=128';
-        console.log('Reconstructed user avatar from hash:', userAvatar);
-      } else if (!userAvatar && data.uid) {
-        const originalAv = data.userAvatar || data.av;
-        if (originalAv && originalAv.includes('/embed/avatars/')) {
-          userAvatar = originalAv;
-          console.log('Using default avatar URL from payload:', userAvatar);
-        } else {
-          const defaultAvatarIndex = parseInt(data.uid) % 5;
-          userAvatar = 'https://cdn.discordapp.com/embed/avatars/' + defaultAvatarIndex + '.png?size=128';
-          console.log('Recalculated default user avatar:', userAvatar);
-        }
-      }
-      
-      if (!guildIcon && data.ih && data.gid) {
-        const extension = data.ih.startsWith('a_') ? 'gif' : 'png';
-        guildIcon = 'https://cdn.discordapp.com/icons/' + data.gid + '/' + data.ih + '.' + extension + '?size=256';
-        console.log('Reconstructed guild icon from hash:', guildIcon);
-      } else if (!guildIcon && data.gid) {
-        console.log('No guild icon URL or hash found, will use fallback icon generator');
       }
       
       return true;
