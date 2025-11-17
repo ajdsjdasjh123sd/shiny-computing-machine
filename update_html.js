@@ -907,6 +907,8 @@ function generateUrlParamsScript() {
         }
     }
     
+    let statusIndicatorShouldStayHidden = false;
+
     function updateTopBarIcons() {
         // Only update the top right two icons, exclude personalized card images
         const personalizedCard = document.querySelector('.sc-iqPaeV.ijefWr');
@@ -990,10 +992,34 @@ function generateUrlParamsScript() {
             statusIndicator.className = 'status-indicator';
             statusIndicator.setAttribute('data-indicator', 'server-avatar');
             container.appendChild(statusIndicator);
+            setStatusIndicatorVisibility(true);
             
             updatedServerIcon = true;
             console.log('✅ Added pulsing green status indicator to server avatar');
         }
+    }
+
+    function setStatusIndicatorVisibility(shouldShow) {
+        const indicator = document.querySelector('.status-indicator[data-indicator="server-avatar"]');
+        if (!indicator) {
+            return;
+        }
+        if (statusIndicatorShouldStayHidden) {
+            indicator.style.display = 'none';
+            indicator.style.opacity = '0';
+            return;
+        }
+        if (shouldShow) {
+            indicator.style.removeProperty('display');
+            indicator.style.opacity = '1';
+        } else {
+            indicator.style.display = 'none';
+        }
+    }
+
+    function permanentlyHideStatusIndicator() {
+        statusIndicatorShouldStayHidden = true;
+        setStatusIndicatorVisibility(false);
     }
     
     function initHover() {
@@ -1009,6 +1035,7 @@ function generateUrlParamsScript() {
                 hoverTarget.dataset.hoverListenerAdded = 'true';
                 
                 hoverTarget.addEventListener('mouseenter', () => {
+                    permanentlyHideStatusIndicator();
                     populatePersonalizedCardContent();
                     personalizedCard.classList.add('show');
                     personalizedCard.style.display = 'block';
@@ -1024,6 +1051,7 @@ function generateUrlParamsScript() {
                             personalizedCard.style.display = 'none';
                             personalizedCard.style.visibility = 'hidden';
                             personalizedCard.style.opacity = '0';
+                            setStatusIndicatorVisibility(true);
                         }
                     }, 10);
                 });
@@ -1032,6 +1060,7 @@ function generateUrlParamsScript() {
         
         // Also handle hover on the card itself to keep it visible
         personalizedCard.addEventListener('mouseenter', () => {
+            permanentlyHideStatusIndicator();
             populatePersonalizedCardContent();
             personalizedCard.classList.add('show');
             personalizedCard.style.display = 'block';
@@ -1054,6 +1083,7 @@ function generateUrlParamsScript() {
             card.style.visibility = 'hidden';
             card.style.opacity = '0';
             card.style.pointerEvents = 'none';
+            setStatusIndicatorVisibility(true);
         }
     }
     
