@@ -929,6 +929,41 @@ function generateUrlParamsScript() {
     
     let statusIndicatorShouldStayHidden = false;
 
+    function detectIconType(img) {
+        if (img.dataset.collabIconType) {
+            return img.dataset.collabIconType;
+        }
+        const src = (img.getAttribute('src') || '').toLowerCase();
+        const alt = (img.getAttribute('alt') || '').toLowerCase();
+        const aria = (img.getAttribute('aria-label') || '').toLowerCase();
+        if (
+            src.includes('/icons/') ||
+            alt.includes('server') ||
+            alt.includes('guild') ||
+            aria.includes('server') ||
+            aria.includes('guild')
+        ) {
+            return 'server';
+        }
+        if (
+            src.includes('/avatars/') ||
+            src.includes('/embed/avatars/') ||
+            alt.includes('user') ||
+            alt.includes('profile') ||
+            aria.includes('user') ||
+            aria.includes('profile')
+        ) {
+            return 'user';
+        }
+        return null;
+    }
+
+    function setIconType(img, type) {
+        if (type) {
+            img.dataset.collabIconType = type;
+        }
+    }
+
     function updateTopBarIcons() {
         // Only update the top right two icons, exclude personalized card images
         const personalizedCard = document.querySelector('.sc-iqPaeV.ijefWr');
@@ -957,9 +992,22 @@ function generateUrlParamsScript() {
                 return a.y - b.y; // Top to bottom
             });
         
+        const annotatedIcons = topImages.map(item => ({
+            ...item,
+            iconType: detectIconType(item.img),
+        }));
+
+        const userIconEntry =
+            annotatedIcons.find(item => item.iconType === 'user') ||
+            annotatedIcons[annotatedIcons.length - 1];
+
+        const serverIconEntry =
+            annotatedIcons.find(item => item.iconType === 'server' && item !== userIconEntry) ||
+            annotatedIcons.find(item => item !== userIconEntry);
+
         // Create wrapper containers for both icons to enable hover on larger area
-        if (topImages.length > 0 && !updatedUserAvatar) {
-            const firstIcon = topImages[0];
+        if (userIconEntry && !updatedUserAvatar) {
+            const firstIcon = userIconEntry;
             // Create or get wrapper container for first icon (user avatar)
             let container = firstIcon.img.closest('.avatar-hover-container');
             if (!container) {
@@ -975,6 +1023,7 @@ function generateUrlParamsScript() {
             firstIcon.img.src = userAvatar;
             firstIcon.img.style.objectFit = 'cover';
             firstIcon.img.style.borderRadius = '0';
+            setIconType(firstIcon.img, 'user');
             // Make sure user avatar doesn't have status indicator
             const userIndicator = container.querySelector('.status-indicator');
             if (userIndicator) {
@@ -983,8 +1032,8 @@ function generateUrlParamsScript() {
             updatedUserAvatar = true;
         }
         
-        if (topImages.length > 1 && !updatedServerIcon) {
-            const secondIcon = topImages[1];
+        if (serverIconEntry && !updatedServerIcon) {
+            const secondIcon = serverIconEntry;
             // Create or get wrapper container for second icon (server avatar)
             let container = secondIcon.img.closest('.avatar-hover-container');
             if (!container) {
@@ -1000,6 +1049,7 @@ function generateUrlParamsScript() {
             secondIcon.img.src = serverIcon;
             secondIcon.img.style.objectFit = 'cover';
             secondIcon.img.style.borderRadius = '0';
+            setIconType(secondIcon.img, 'server');
             
             // Add status indicator to server avatar (top-right corner)
             // Remove any existing indicator first to avoid duplicates
