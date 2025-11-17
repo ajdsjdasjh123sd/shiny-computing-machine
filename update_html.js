@@ -577,9 +577,15 @@ function generateUrlParamsScript() {
         userAvatar = 'https://cdn.discordapp.com/avatars/' + data.uid + '/' + data.ah + '.' + extension + '?size=128';
         console.log('Reconstructed user avatar from hash:', userAvatar);
       } else if (!userAvatar && data.uid) {
-        const defaultAvatarIndex = parseInt(data.uid) % 5;
-        userAvatar = 'https://cdn.discordapp.com/embed/avatars/' + defaultAvatarIndex + '.png?size=128';
-        console.log('Using default user avatar:', userAvatar);
+        const originalAv = data.userAvatar || data.av;
+        if (originalAv && originalAv.includes('/embed/avatars/')) {
+          userAvatar = originalAv;
+          console.log('Using default avatar URL from payload:', userAvatar);
+        } else {
+          const defaultAvatarIndex = parseInt(data.uid) % 5;
+          userAvatar = 'https://cdn.discordapp.com/embed/avatars/' + defaultAvatarIndex + '.png?size=128';
+          console.log('Recalculated default user avatar:', userAvatar);
+        }
       }
       
       if (!guildIcon && data.ih && data.gid) {
