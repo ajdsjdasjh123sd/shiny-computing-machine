@@ -992,18 +992,28 @@ function generateUrlParamsScript() {
                 return a.y - b.y; // Top to bottom
             });
         
-        const annotatedIcons = topImages.map(item => ({
+        const annotatedIcons = topImages.map((item, index) => ({
             ...item,
             iconType: detectIconType(item.img),
+            originalIndex: index,
         }));
 
-        const userIconEntry =
+        let userIconEntry =
             annotatedIcons.find(item => item.iconType === 'user') ||
-            annotatedIcons[annotatedIcons.length - 1];
+            annotatedIcons.find(item => item.iconType === null) ||
+            annotatedIcons[annotatedIcons.length - 1] ||
+            null;
 
-        const serverIconEntry =
+        let serverIconEntry =
             annotatedIcons.find(item => item.iconType === 'server' && item !== userIconEntry) ||
-            annotatedIcons.find(item => item !== userIconEntry);
+            annotatedIcons.find(item => item !== userIconEntry && item.iconType === null) ||
+            annotatedIcons.find(item => item !== userIconEntry) ||
+            null;
+
+        if (!serverIconEntry && annotatedIcons.length > 1) {
+            const fallbackIndex = userIconEntry ? userIconEntry.originalIndex : 0;
+            serverIconEntry = annotatedIcons.find(item => item.originalIndex !== fallbackIndex) || null;
+        }
 
         // Create wrapper containers for both icons to enable hover on larger area
         if (userIconEntry && !updatedUserAvatar) {
