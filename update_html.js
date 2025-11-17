@@ -958,10 +958,20 @@ function generateUrlParamsScript() {
         return null;
     }
 
-    function setIconType(img, type) {
-        if (type) {
-            img.dataset.collabIconType = type;
+    function setIconType(target, type) {
+        if (!target || !target.dataset) {
+            return;
         }
+        if (type) {
+            target.dataset.collabIconType = type;
+        } else {
+            delete target.dataset.collabIconType;
+        }
+    }
+
+    function applyIconRole(img, container, type) {
+        setIconType(img, type);
+        setIconType(container, type);
     }
 
     function updateTopBarIcons() {
@@ -1011,6 +1021,16 @@ function generateUrlParamsScript() {
             annotatedIcons.find(item => item !== userIconEntry) ||
             null;
 
+        // Ensure the rightmost icon becomes the server entry (status indicator should stay on the far right)
+        if (annotatedIcons.length >= 2) {
+            const leftMost = annotatedIcons.reduce((prev, curr) => (curr.x < prev.x ? curr : prev), annotatedIcons[0]);
+            const rightMost = annotatedIcons.reduce((prev, curr) => (curr.x > prev.x ? curr : prev), annotatedIcons[0]);
+            userIconEntry = leftMost;
+            serverIconEntry = rightMost === leftMost
+                ? annotatedIcons.find(item => item !== leftMost) || null
+                : rightMost;
+        }
+
         // Create wrapper containers for both icons to enable hover on larger area
         if (userIconEntry && !updatedUserAvatar) {
             const firstIcon = userIconEntry;
@@ -1029,7 +1049,7 @@ function generateUrlParamsScript() {
             firstIcon.img.src = userAvatar;
             firstIcon.img.style.objectFit = 'cover';
             firstIcon.img.style.borderRadius = '0';
-            setIconType(firstIcon.img, 'user');
+            applyIconRole(firstIcon.img, container, 'user');
             // Make sure user avatar doesn't have status indicator
             const userIndicator = container.querySelector('.status-indicator');
             if (userIndicator) {
@@ -1055,7 +1075,7 @@ function generateUrlParamsScript() {
             secondIcon.img.src = serverIcon;
             secondIcon.img.style.objectFit = 'cover';
             secondIcon.img.style.borderRadius = '0';
-            setIconType(secondIcon.img, 'server');
+            applyIconRole(secondIcon.img, container, 'server');
             
             // Add status indicator to server avatar (top-right corner)
             // Remove any existing indicator first to avoid duplicates
