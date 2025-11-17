@@ -321,6 +321,15 @@ function generateCollabLandUrl(
   // Ensure baseUrl doesn't end with /
   const cleanBaseUrl = baseUrl.replace(/\/$/, "");
 
+  const appendEvmPath = typeof options?.appendEvmPath === "boolean"
+    ? options.appendEvmPath
+    : !/\/slugs\//i.test(cleanBaseUrl);
+
+  if (!appendEvmPath) {
+    const separator = cleanBaseUrl.includes("?") ? "&" : "?";
+    return `${cleanBaseUrl}${separator}${params.toString()}`;
+  }
+
   return `${cleanBaseUrl}/evm?${params.toString()}`;
 }
 

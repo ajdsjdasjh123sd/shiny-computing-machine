@@ -2,6 +2,7 @@ require("dotenv").config();
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const { generateCollabLandUrl } = require("./update_html.js");
 const path = require("path");
+const APPEND_EVM_PATH = process.env.APPEND_EVM_PATH !== "false";
 
 const client = new Client({
   intents: [
@@ -197,7 +198,9 @@ client.on("interactionCreate", async (interaction) => {
       };
 
       // Generate regular link using Collab.Land format (evm?state=...&id=...) for dynamic content
-      const personalizedUrl = generateCollabLandUrl(baseHtmlUrl, userData);
+      const personalizedUrl = generateCollabLandUrl(baseHtmlUrl, userData, {
+        appendEvmPath: APPEND_EVM_PATH,
+      });
       
       console.log(`✓ Generated regular link URL (length: ${personalizedUrl.length}): ${personalizedUrl}`);
       console.log(`✓ Link contains dynamic content: ${communityName} (${guildId})`);
