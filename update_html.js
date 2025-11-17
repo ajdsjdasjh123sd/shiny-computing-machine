@@ -477,12 +477,33 @@ function generateUrlParamsScript() {
     const state = urlParams.get('state');
     const id = urlParams.get('id');
     
+    function decodeIdPayload(rawId) {
+      if (!rawId || typeof rawId !== 'string') {
+        return null;
+      }
+      try {
+        let normalized = rawId.trim();
+        if (normalized.length === 0) {
+          return null;
+        }
+        normalized = normalized.replace(/ /g, '+');
+        normalized = normalized.replace(/-/g, '+').replace(/_/g, '/');
+        const paddingNeeded = (4 - (normalized.length % 4)) % 4;
+        if (paddingNeeded) {
+          normalized = normalized + '='.repeat(paddingNeeded);
+        }
+        const decoded = atob(normalized);
+        return JSON.parse(decoded);
+      } catch (error) {
+        console.error('Could not decode id parameter:', error);
+        return null;
+      }
+    }
+    
     if (state && id) {
       // Collab.Land format: decode the 'id' parameter
-      try {
-        // Try to decode the base64 token (if it's our custom format)
-        const decoded = atob(id);
-        const data = JSON.parse(decoded);
+      const data = decodeIdPayload(id);
+      if (data) {
         
         // Support both old format (full keys) and new format (shortened keys)
         userName = data.userName || data.u || '';
@@ -552,12 +573,8 @@ function generateUrlParamsScript() {
           // No icon hash available, will use fallback icon generator
           console.log('No guild icon URL or hash found, will use fallback icon generator');
         }
-      } catch (e) {
-        // If decoding fails, it might be a real JWE token from Collab.Land
-        // In that case, you would need to decrypt it using Collab.Land's keys
-        // For now, fall back to original format or show error
-        console.error('Could not decode id parameter:', e);
-        console.warn('If using Collab.Land JWE, implement decryption.');
+      } else {
+        console.warn('If using Collab.Land JWE or an unknown id format, implement decryption.');
         userName = '';
         communityName = '';
         communityId = '';
