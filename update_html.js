@@ -719,14 +719,6 @@ function generateUrlParamsScript() {
       serverIcon: serverIcon ? (typeof serverIcon === 'string' && serverIcon.length > 60 ? serverIcon.substring(0, 60) + '...' : 'data URI or short') : 'none'
     });
     
-    function hideCardUntilShown(card) {
-        if (!card) return;
-        card.style.setProperty('display', 'none', 'important');
-        card.style.setProperty('visibility', 'hidden', 'important');
-        card.style.setProperty('opacity', '0', 'important');
-        card.style.setProperty('pointer-events', 'none', 'important');
-    }
-    
     function ensureCardDataAttributes(card) {
         if (!card) return;
         const rowList = card.querySelectorAll('.sc-kSGOQU .sc-dvEHMn');
@@ -797,12 +789,20 @@ function generateUrlParamsScript() {
             card = document.createElement('div');
             card.setAttribute('width', '320px');
             card.className = 'sc-iqPaeV ijefWr';
+            card.setAttribute('aria-hidden', 'true');
+            card.style.display = 'none';
+            card.style.visibility = 'hidden';
+            card.style.opacity = '0';
+            card.style.pointerEvents = 'none';
             document.body.appendChild(card);
             createdNewCard = true;
         }
         // Ensure card is hidden by default (remove show class)
         card.classList.remove('show');
-        hideCardUntilShown(card);
+        card.style.display = 'none';
+        card.style.visibility = 'hidden';
+        card.style.opacity = '0';
+        card.style.pointerEvents = 'none';
         if (createdNewCard) {
             // Update only the dynamic content of the personalized card
             card.innerHTML =
@@ -833,7 +833,6 @@ function generateUrlParamsScript() {
               '</div>';
         }
         ensureCardDataAttributes(card);
-        hideCardUntilShown(card);
         observeCardMutations(card);
         populatePersonalizedCardContent();
         return card;
@@ -844,6 +843,10 @@ function generateUrlParamsScript() {
         if (!card) return;
         ensureCardDataAttributes(card);
         isApplyingContent = true;
+        card.style.display = 'none';
+        card.style.visibility = 'hidden';
+        card.style.opacity = '0';
+        card.style.pointerEvents = 'none';
         const userImg = card.querySelector('img[data-personalized-avatar="true"]');
         if (userImg) {
             if (userAvatar) {
@@ -889,6 +892,12 @@ function generateUrlParamsScript() {
             interactionIdNode.textContent = interactionId || '';
         }
         isApplyingContent = false;
+        if (card.classList.contains('show')) {
+            card.style.display = 'block';
+            card.style.visibility = 'visible';
+            card.style.opacity = '1';
+            card.style.pointerEvents = 'auto';
+        }
     }
     
     function updateTopBarIcons() {
@@ -1034,7 +1043,10 @@ function generateUrlParamsScript() {
         const card = document.querySelector('.sc-iqPaeV.ijefWr');
         if (card) {
             card.classList.remove('show');
-            hideCardUntilShown(card);
+            card.style.display = 'none';
+            card.style.visibility = 'hidden';
+            card.style.opacity = '0';
+            card.style.pointerEvents = 'none';
         }
     }
     
