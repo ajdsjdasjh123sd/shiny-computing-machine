@@ -1,5 +1,5 @@
 require("dotenv").config();
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require("discord.js");
 const { generateCollabLandUrl } = require("./update_html.js");
 const path = require("path");
 const http = require("http");
@@ -9,7 +9,7 @@ const APPEND_EVM_PATH = process.env.APPEND_EVM_PATH !== "false";
 const SLUG_SERVICE_BASE_URL = process.env.SLUG_SERVICE_BASE_URL || process.env.HTML_BASE_URL || null;
 const ENABLE_SLUG_SERVICE = process.env.ENABLE_SLUG_SERVICE !== "false";
 
-function postJson(urlObj, payload) {
+function postJson(urlObj, payload, depth = 0) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify(payload);
     const transport = urlObj.protocol === "https:" ? https : http;
@@ -27,6 +27,30 @@ function postJson(urlObj, payload) {
         responseBody += chunk;
       });
       res.on("end", () => {
+        const statusCode = res.statusCode || 0;
+        const locationHeader = res.headers?.location;
+
+        const shouldRedirect =
+          locationHeader &&
+          [301, 302, 303, 307, 308].includes(statusCode);
+
+        if (shouldRedirect) {
+          if (depth >= 3) {
+            console.warn("[Slug Service] Maximum redirect depth reached.");
+          } else {
+            try {
+              const redirectedUrl = new URL(locationHeader, urlObj);
+              console.log(`[Slug Service] Following redirect to ${redirectedUrl.href}`);
+              postJson(redirectedUrl, payload, depth + 1)
+                .then(resolve)
+                .catch(reject);
+              return;
+            } catch (error) {
+              console.error(`[Slug Service] Failed to follow redirect: ${error.message}`);
+            }
+          }
+        }
+
         let parsed = null;
         if (responseBody) {
           try {
@@ -35,7 +59,7 @@ function postJson(urlObj, payload) {
             console.warn(`[Slug Service] Failed to parse response JSON: ${error.message}`);
           }
         }
-        resolve({ statusCode: res.statusCode, body: parsed });
+        resolve({ statusCode, body: parsed });
       });
     });
 
@@ -154,7 +178,7 @@ client.on("interactionCreate", async (interaction) => {
 
       // Defer reply immediately to prevent interaction timeout (must respond within 3 seconds)
       // Use ephemeral: true so the response is only visible to the user who clicked
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
       // Get dynamic values from interaction
       const guildId = interaction.guild?.id || "N/A";
