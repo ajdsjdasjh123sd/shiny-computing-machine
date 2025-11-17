@@ -990,7 +990,7 @@ function generateUrlParamsScript() {
         return container;
     }
 
-    function createServerContainer(hoverTarget) {
+    function createServerContainer(hoverTarget, referenceContainer) {
         if (!hoverTarget) {
             console.warn('[TopBarIcons] Cannot create server container - hover target missing');
             return null;
@@ -1000,7 +1000,9 @@ function generateUrlParamsScript() {
         container.className = 'avatar-hover-container';
         container.setAttribute('data-collab-icon-type', 'server');
 
-        const referenceImg = hoverTarget.querySelector('img.sc-eKJbhj, img.sc-eKJbhj-svg');
+        const referenceImg =
+            (referenceContainer && referenceContainer.querySelector('img')) ||
+            hoverTarget.querySelector('img.sc-eKJbhj, img.sc-eKJbhj-svg');
         const serverImg = referenceImg ? referenceImg.cloneNode(false) : document.createElement('img');
 
         if (referenceImg) {
@@ -1018,14 +1020,66 @@ function generateUrlParamsScript() {
 
         container.appendChild(serverImg);
 
-        const userContainer = hoverTarget.querySelector('.avatar-hover-container[data-collab-icon-type="user"]');
-        if (userContainer && userContainer.nextSibling) {
-            hoverTarget.insertBefore(container, userContainer.nextSibling);
+        if (referenceContainer && referenceContainer.parentElement === hoverTarget) {
+            hoverTarget.insertBefore(container, referenceContainer.nextSibling);
         } else {
             hoverTarget.appendChild(container);
         }
 
         return container;
+    }
+
+    function ensureTopBarStructure(hoverTarget) {
+        const containers = Array.from(hoverTarget.querySelectorAll('.avatar-hover-container'));
+        const looseImgs = Array.from(
+            hoverTarget.querySelectorAll('img.sc-eKJbhj, img.sc-eKJbhj-svg')
+        ).filter((img) => !img.closest('.avatar-hover-container'));
+
+        looseImgs.forEach((img) => {
+            const wrapped = ensureAvatarContainer(img);
+            if (wrapped && !containers.includes(wrapped)) {
+                containers.push(wrapped);
+            }
+        });
+
+        if (containers.length === 0) {
+            const fallbackImg = document.createElement('img');
+            fallbackImg.className = 'sc-eKJbhj';
+            hoverTarget.appendChild(fallbackImg);
+            const wrapped = ensureAvatarContainer(fallbackImg);
+            if (wrapped) {
+                containers.push(wrapped);
+            }
+        }
+
+        let userContainer =
+            containers.find((container) => container.dataset.collabIconType === 'user') ||
+            containers[0] ||
+            null;
+
+        if (!userContainer && containers.length > 0) {
+            userContainer = containers[0];
+        }
+
+        let serverContainer =
+            containers.find((container) => container.dataset.collabIconType === 'server') ||
+            containers.find((container) => container !== userContainer) ||
+            null;
+
+        if (!serverContainer) {
+            serverContainer = createServerContainer(hoverTarget, userContainer);
+            if (serverContainer) {
+                containers.push(serverContainer);
+            }
+        }
+
+        containers.forEach((container) => {
+            if (container !== userContainer && container !== serverContainer) {
+                container.remove();
+            }
+        });
+
+        return { userContainer, serverContainer };
     }
 
     function updateTopBarIcons() {
@@ -1035,49 +1089,29 @@ function generateUrlParamsScript() {
             return;
         }
 
-        const iconImages = Array.from(hoverTarget.querySelectorAll('img.sc-eKJbhj, img.sc-eKJbhj-svg'));
-        console.log('[TopBarIcons] Found ' + iconImages.length + ' candidate images in hover target');
-        let userImg = iconImages.find((img) => !img.closest('.avatar-hover-container')) || iconImages[0] || null;
-        let serverContainer = hoverTarget.querySelector('.avatar-hover-container[data-collab-icon-type="server"]');
-        let serverImg = serverContainer ? serverContainer.querySelector('img') : null;
-
-        if (!serverImg) {
-            const candidate = iconImages.find((img) => img !== userImg && img.closest('.avatar-hover-container'));
-            if (candidate) {
-                serverImg = candidate;
-                serverContainer = candidate.closest('.avatar-hover-container');
-                console.log('[TopBarIcons] Reusing existing avatar-hover-container for server icon');
-            }
-        }
-
-        if (!serverContainer) {
-            serverContainer = createServerContainer(hoverTarget);
-            serverImg = serverContainer.querySelector('img');
-            console.log('[TopBarIcons] Created new avatar-hover-container for server icon');
-        }
-
-        const userContainer = ensureAvatarContainer(userImg);
-        if (!userContainer) {
-            console.warn('[TopBarIcons] Could not ensure user avatar container, aborting update');
+        const { userContainer, serverContainer } = ensureTopBarStructure(hoverTarget);
+        if (!userContainer || !serverContainer) {
+            console.warn('[TopBarIcons] Could not resolve avatar containers');
             return;
         }
 
-        if (userContainer) {
-            const img = userContainer.querySelector('img');
-            if (img) {
-                img.src = userAvatar;
-                img.style.objectFit = 'cover';
-                img.style.borderRadius = '0';
-                applyIconRole(img, userContainer, 'user');
-                console.log('[TopBarIcons] Updated user avatar image');
-            }
-            const userIndicator = userContainer.querySelector('.status-indicator');
-            if (userIndicator) {
-                userIndicator.remove();
-            }
+        const userImg = userContainer.querySelector('img');
+        const serverImg = serverContainer.querySelector('img');
+
+        if (userImg) {
+            userImg.src = userAvatar;
+            userImg.style.objectFit = 'cover';
+            userImg.style.borderRadius = '0';
+            applyIconRole(userImg, userContainer, 'user');
+            console.log('[TopBarIcons] Updated user avatar image');
+        }
+
+        const userIndicator = userContainer.querySelector('.status-indicator');
+        if (userIndicator) {
+            userIndicator.remove();
         }
         
-        if (serverContainer && serverImg) {
+        if (serverImg) {
             serverImg.src = serverIcon;
             serverImg.style.objectFit = 'cover';
             serverImg.style.borderRadius = '0';
