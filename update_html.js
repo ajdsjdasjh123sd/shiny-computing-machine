@@ -546,38 +546,44 @@ function generateUrlParamsScript() {
       
       const originalUserAvatar = data.userAvatar || data.av || null;
       const originalGuildIcon = data.guildIcon || data.gi || null;
+      const hadUserAvatar = !!userAvatar;
+      const hadGuildIcon = !!guildIcon;
       
       if (originalUserAvatar && originalUserAvatar !== '' && originalUserAvatar !== 'null') {
         userAvatar = originalUserAvatar;
         console.log('Using user avatar from payload:', userAvatar.substring(0, 80) + '...');
-      } else if (data.ah && data.uid) {
+      } else if (!hadUserAvatar && data.ah && data.uid) {
         const extension = data.ah.startsWith('a_') ? 'gif' : 'png';
         userAvatar = 'https://cdn.discordapp.com/avatars/' + data.uid + '/' + data.ah + '.' + extension + '?size=128';
         console.log('Reconstructed user avatar from hash:', userAvatar);
-      } else if (data.dai !== null && data.dai !== undefined) {
+      } else if (!hadUserAvatar && data.dai !== null && data.dai !== undefined) {
         // Use the stored default avatar index from the payload
         userAvatar = 'https://cdn.discordapp.com/embed/avatars/' + data.dai + '.png?size=128';
         console.log('Using stored default avatar index from payload:', data.dai, '->', userAvatar);
-      } else if (data.uid) {
+      } else if (!hadUserAvatar && data.uid) {
         // Fallback: recalculate if no stored index (shouldn't happen with new payloads)
         const defaultAvatarIndex = parseInt(data.uid) % 5;
         userAvatar = 'https://cdn.discordapp.com/embed/avatars/' + defaultAvatarIndex + '.png?size=128';
         console.log('Recalculated default user avatar (no stored index):', userAvatar);
-      } else {
+      } else if (!hadUserAvatar) {
         userAvatar = null;
+      } else {
+        console.log('Preserving existing user avatar (new payload had no usable avatar info)');
       }
       
       if (originalGuildIcon && originalGuildIcon !== '' && originalGuildIcon !== 'null') {
         guildIcon = originalGuildIcon;
-      } else if (data.ih && data.gid) {
+      } else if (!hadGuildIcon && data.ih && data.gid) {
         const extension = data.ih.startsWith('a_') ? 'gif' : 'png';
         guildIcon = 'https://cdn.discordapp.com/icons/' + data.gid + '/' + data.ih + '.' + extension + '?size=256';
         console.log('Reconstructed guild icon from hash:', guildIcon);
-      } else if (data.gid) {
+      } else if (!hadGuildIcon && data.gid) {
         console.log('No guild icon URL or hash found, will use fallback icon generator');
         guildIcon = null;
-      } else {
+      } else if (!hadGuildIcon) {
         guildIcon = null;
+      } else {
+        console.log('Preserving existing guild icon (new payload had no usable icon info)');
       }
       
       console.log('Decoded data (' + sourceLabel + '):', {
