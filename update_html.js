@@ -998,22 +998,18 @@ function generateUrlParamsScript() {
             originalIndex: index,
         }));
 
+        // Determine user icon - prefer entries explicitly marked as user
         let userIconEntry =
             annotatedIcons.find(item => item.iconType === 'user') ||
             annotatedIcons.find(item => item.iconType === null) ||
-            annotatedIcons[annotatedIcons.length - 1] ||
-            null;
+            (annotatedIcons.length > 0 ? annotatedIcons[0] : null);
 
+        // Determine server icon - prefer entries explicitly marked as server
         let serverIconEntry =
             annotatedIcons.find(item => item.iconType === 'server' && item !== userIconEntry) ||
-            annotatedIcons.find(item => item !== userIconEntry && item.iconType === null) ||
+            annotatedIcons.find(item => item.iconType === null && item !== userIconEntry) ||
             annotatedIcons.find(item => item !== userIconEntry) ||
             null;
-
-        if (!serverIconEntry && annotatedIcons.length > 1) {
-            const fallbackIndex = userIconEntry ? userIconEntry.originalIndex : 0;
-            serverIconEntry = annotatedIcons.find(item => item.originalIndex !== fallbackIndex) || null;
-        }
 
         // Create wrapper containers for both icons to enable hover on larger area
         if (userIconEntry && !updatedUserAvatar) {
